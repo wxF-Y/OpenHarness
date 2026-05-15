@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import OnboardingGuard from './components/OnboardingGuard'
 
 const WelcomePage = lazy(() => import('./pages/WelcomePage'))
 const ChatPage = lazy(() => import('./pages/ChatPage'))
@@ -12,7 +13,7 @@ const AutopilotPage = lazy(() => import('./pages/AutopilotPage'))
 
 function LoadingFallback() {
   return (
-    <div className="flex items-center justify-center h-screen text-[#89b4fa] text-sm">
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#89b4fa', fontSize: '0.875rem', backgroundColor: '#1e1e2e' }}>
       Loading…
     </div>
   )
@@ -22,16 +23,18 @@ export default function App() {
   return (
     <BrowserRouter>
       <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route path="/" element={<WelcomePage />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          <Route path="/chat/:sessionId" element={<ChatPage />} />
-          <Route path="/cron" element={<CronPage />} />
-          <Route path="/swarm" element={<SwarmPage />} />
-          <Route path="/memory" element={<MemoryPage />} />
-          <Route path="/skills" element={<SkillsPage />} />
-          <Route path="/autopilot" element={<AutopilotPage />} />
-        </Routes>
+        <OnboardingGuard>
+          <Routes>
+            <Route path="/" element={<WelcomePage />} />
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/chat/:sessionId" element={<ChatPage />} />
+            <Route path="/cron" element={<CronPage />} />
+            <Route path="/swarm" element={<SwarmPage />} />
+            <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/autopilot" element={<AutopilotPage />} />
+          </Routes>
+        </OnboardingGuard>
       </Suspense>
     </BrowserRouter>
   )
