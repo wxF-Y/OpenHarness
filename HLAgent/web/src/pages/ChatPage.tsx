@@ -2,13 +2,21 @@ import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useSessionStore } from '../stores/sessionStore'
+import { useUiStore } from '../stores/uiStore'
 import TranscriptViewer from '../components/TranscriptViewer'
 import MessageInput from '../components/MessageInput'
+import StatusBar from '../components/StatusBar'
+import PermissionModal from '../components/PermissionModal'
+import QuestionModal from '../components/QuestionModal'
+import SelectModal from '../components/SelectModal'
+import CompactProgressBar from '../components/CompactProgressBar'
+import ErrorToastContainer from '../components/ErrorToast'
 
 export default function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
   const store = useSessionStore()
+  const ui = useUiStore()
   const { sendRequest } = useWebSocket(sessionId || null)
 
   useEffect(() => {
@@ -37,6 +45,9 @@ export default function ChatPage() {
         </span>
       </div>
 
+      {/* Compact progress bar */}
+      <CompactProgressBar phase={ui.compactPhase} />
+
       {/* Transcript */}
       <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} />
 
@@ -50,6 +61,40 @@ export default function ChatPage() {
         }}
         wsStatus={store.wsStatus}
       />
+
+      {/* Status bar */}
+      <StatusBar />
+
+      {/* Modals */}
+      {ui.activeModal?.kind === 'permission' && (
+        <PermissionModal
+          toolName={ui.activeModal.tool_name}
+          reason={ui.activeModal.reason}
+          requestId={ui.activeModal.request_id}
+          sendRequest={sendRequest}
+          onClose={() => ui.setActiveModal(null)}
+        />
+      )}
+      {ui.activeModal?.kind === 'question' && (
+        <QuestionModal
+          question={ui.activeModal.question}
+          requestId={ui.activeModal.request_id}
+          sendRequest={sendRequest}
+          onClose={() => ui.setActiveModal(null)}
+        />
+      )}
+      {ui.activeModal?.kind === 'select' && (
+        <SelectModal
+          title={ui.activeModal.title}
+          command={ui.activeModal.command}
+          options={ui.activeModal.options}
+          sendRequest={sendRequest}
+          onClose={() => ui.setActiveModal(null)}
+        />
+      )}
+
+      {/* Error toasts */}
+      <ErrorToastContainer />
     </div>
   )
 }
