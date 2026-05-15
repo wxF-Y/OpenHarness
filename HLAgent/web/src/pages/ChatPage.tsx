@@ -20,8 +20,8 @@ export default function ChatPage() {
   const { sendRequest } = useWebSocket(sessionId || null)
 
   useEffect(() => {
-    if (sessionId) store.setSessionId(sessionId)
-  }, [sessionId, store.setSessionId])
+    if (sessionId) useSessionStore.getState().setSessionId(sessionId)
+  }, [sessionId]) // stable: no store dependency
 
   if (!sessionId) {
     return (

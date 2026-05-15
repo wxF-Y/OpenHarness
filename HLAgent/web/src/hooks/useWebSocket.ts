@@ -14,127 +14,127 @@ export function useWebSocket(sessionId: string | null) {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const terminatedRef = useRef(false)
 
-  const sessionStore = useSessionStore()
-  const taskStore = useTaskStore()
-  const swarmStore = useSwarmStore()
-  const uiStore = useUiStore()
+  // Use getState() inside callbacks to avoid re-creating dispatch/connect on every store update.
+  // Zustand store actions are stable but the snapshot returned by useXxxStore() is not.
+  const dispatch = useCallback((event: BackendEvent) => {
+    const ss = useSessionStore.getState()
+    const ts = useTaskStore.getState()
+    const sw = useSwarmStore.getState()
+    const ui = useUiStore.getState()
 
-  const dispatch = useCallback(
-    (event: BackendEvent) => {
-      switch (event.type) {
-        case 'ready':
-          if (event.state) sessionStore.setAppState(event.state)
-          if (event.tasks) taskStore.setTasks(event.tasks)
-          if (event.commands) sessionStore.setCommands(event.commands)
-          if (event.mcp_servers) sessionStore.setMcpServers(event.mcp_servers)
-          if (event.bridge_sessions) sessionStore.setBridgeSessions(event.bridge_sessions)
-          sessionStore.setWsStatus('ready')
-          sessionStore.setBusy(false)
-          break
+    switch (event.type) {
+      case 'ready':
+        if (event.state) ss.setAppState(event.state)
+        if (event.tasks) ts.setTasks(event.tasks)
+        if (event.commands) ss.setCommands(event.commands)
+        if (event.mcp_servers) ss.setMcpServers(event.mcp_servers)
+        if (event.bridge_sessions) ss.setBridgeSessions(event.bridge_sessions)
+        ss.setWsStatus('ready')
+        ss.setBusy(false)
+        break
 
-        case 'state_snapshot':
-          if (event.state) sessionStore.setAppState(event.state)
-          if (event.mcp_servers) sessionStore.setMcpServers(event.mcp_servers)
-          if (event.bridge_sessions) sessionStore.setBridgeSessions(event.bridge_sessions)
-          break
+      case 'state_snapshot':
+        if (event.state) ss.setAppState(event.state)
+        if (event.mcp_servers) ss.setMcpServers(event.mcp_servers)
+        if (event.bridge_sessions) ss.setBridgeSessions(event.bridge_sessions)
+        break
 
-        case 'transcript_item':
-          if (event.item) sessionStore.addTranscriptItem(event.item)
-          break
+      case 'transcript_item':
+        if (event.item) ss.addTranscriptItem(event.item)
+        break
 
-        case 'assistant_delta':
-          if (event.message) sessionStore.appendDelta(event.message)
-          break
+      case 'assistant_delta':
+        if (event.message) ss.appendDelta(event.message)
+        break
 
-        case 'assistant_complete':
-          if (event.message) sessionStore.completeAssistant(event.message)
-          break
+      case 'assistant_complete':
+        if (event.message) ss.completeAssistant(event.message)
+        break
 
-        case 'line_complete':
-          sessionStore.setBusy(false)
-          break
+      case 'line_complete':
+        ss.setBusy(false)
+        break
 
-        case 'tool_started':
-          if (event.item) sessionStore.addTranscriptItem(event.item)
-          break
+      case 'tool_started':
+        if (event.item) ss.addTranscriptItem(event.item)
+        break
 
-        case 'tool_completed':
-          if (event.item) sessionStore.addTranscriptItem(event.item)
-          break
+      case 'tool_completed':
+        if (event.item) ss.addTranscriptItem(event.item)
+        break
 
-        case 'tasks_snapshot':
-          if (event.tasks) taskStore.setTasks(event.tasks)
-          break
+      case 'tasks_snapshot':
+        if (event.tasks) ts.setTasks(event.tasks)
+        break
 
-        case 'todo_update':
-          taskStore.setTodoMarkdown(event.todo_markdown ?? null)
-          break
+      case 'todo_update':
+        ts.setTodoMarkdown(event.todo_markdown ?? null)
+        break
 
-        case 'compact_progress':
-          uiStore.setCompactPhase(event.compact_phase ?? null)
-          break
+      case 'compact_progress':
+        ui.setCompactPhase(event.compact_phase ?? null)
+        break
 
-        case 'clear_transcript':
-          sessionStore.clearTranscript()
-          break
+      case 'clear_transcript':
+        ss.clearTranscript()
+        break
 
-        case 'modal_request': {
-          const modal = event.modal as Record<string, unknown>
-          if (modal?.kind === 'permission') {
-            uiStore.setActiveModal({
-              kind: 'permission',
-              request_id: modal.request_id as string,
-              tool_name: modal.tool_name as string | undefined,
-              reason: modal.reason as string | undefined,
-            })
-          } else if (modal?.kind === 'question') {
-            uiStore.setActiveModal({
-              kind: 'question',
-              request_id: modal.request_id as string,
-              question: modal.question as string | undefined,
-            })
-          }
-          break
-        }
-
-        case 'select_request': {
-          const modal = event.modal as Record<string, unknown> | undefined
-          uiStore.setActiveModal({
-            kind: 'select',
-            title: (modal?.title as string) || 'Select',
-            command: (modal?.command as string) || '',
-            options: event.select_options ?? [],
+      case 'modal_request': {
+        const modal = event.modal as Record<string, unknown>
+        if (modal?.kind === 'permission') {
+          ui.setActiveModal({
+            kind: 'permission',
+            request_id: modal.request_id as string,
+            tool_name: modal.tool_name as string | undefined,
+            reason: modal.reason as string | undefined,
           })
-          break
+        } else if (modal?.kind === 'question') {
+          ui.setActiveModal({
+            kind: 'question',
+            request_id: modal.request_id as string,
+            question: modal.question as string | undefined,
+          })
         }
-
-        case 'plan_mode_change':
-          sessionStore.setPlanMode(event.plan_mode ?? 'default')
-          break
-
-        case 'swarm_status':
-          if (event.swarm_teammates) swarmStore.setTeammates(event.swarm_teammates)
-          if (event.swarm_notifications) swarmStore.addNotifications(event.swarm_notifications)
-          break
-
-        case 'error':
-          if (event.message) uiStore.addErrorToast(event.message)
-          break
-
-        case 'shutdown':
-          sessionStore.setTerminated()
-          terminatedRef.current = true
-          break
+        break
       }
-    },
-    [sessionStore, taskStore, swarmStore, uiStore],
-  )
+
+      case 'select_request': {
+        const modal = event.modal as Record<string, unknown> | undefined
+        ui.setActiveModal({
+          kind: 'select',
+          title: (modal?.title as string) || 'Select',
+          command: (modal?.command as string) || '',
+          options: event.select_options ?? [],
+        })
+        break
+      }
+
+      case 'plan_mode_change':
+        ss.setPlanMode(event.plan_mode ?? 'default')
+        break
+
+      case 'swarm_status':
+        if (event.swarm_teammates) sw.setTeammates(event.swarm_teammates)
+        if (event.swarm_notifications) sw.addNotifications(event.swarm_notifications)
+        break
+
+      case 'error':
+        if (event.message) ui.addErrorToast(event.message)
+        break
+
+      case 'shutdown':
+        ss.setTerminated()
+        terminatedRef.current = true
+        break
+    }
+  }, []) // empty deps — uses getState() instead of snapshot
 
   const connect = useCallback(() => {
     if (!sessionId || terminatedRef.current) return
-    sessionStore.setWsStatus('connecting')
+    useSessionStore.getState().setWsStatus('connecting')
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`)
+    const wsUrl = `ws://localhost:8000/ws/${sessionId}`
+    const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -152,8 +152,7 @@ export function useWebSocket(sessionId: string | null) {
 
     ws.onclose = (e) => {
       if (terminatedRef.current) return
-      sessionStore.setWsStatus('disconnected')
-      // Exponential backoff retry (not for intentional shutdown)
+      useSessionStore.getState().setWsStatus('disconnected')
       if (e.code !== 4004) {
         retryTimerRef.current = setTimeout(() => {
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, MAX_RETRY_DELAY)
@@ -165,7 +164,7 @@ export function useWebSocket(sessionId: string | null) {
     ws.onerror = () => {
       ws.close()
     }
-  }, [sessionId, dispatch, sessionStore])
+  }, [sessionId, dispatch]) // sessionId is stable for a given ChatPage mount
 
   useEffect(() => {
     terminatedRef.current = false
