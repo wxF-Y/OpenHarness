@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
+# Isolate HLAgent storage from the shared OpenHarness ~/.openharness/ directory.
+# Must be set BEFORE any openharness modules are imported so path resolution
+# picks up the override immediately.
+_hlagent_home = Path.home() / ".hlagent"
+os.environ.setdefault("OPENHARNESS_CONFIG_DIR", str(_hlagent_home))
+os.environ.setdefault("OPENHARNESS_DATA_DIR", str(_hlagent_home / "data"))
+os.environ.setdefault("OPENHARNESS_LOGS_DIR", str(_hlagent_home / "logs"))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
