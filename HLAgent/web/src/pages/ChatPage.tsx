@@ -20,7 +20,14 @@ export default function ChatPage() {
   const { sendRequest } = useWebSocket(sessionId || null)
 
   useEffect(() => {
-    if (sessionId) useSessionStore.getState().setSessionId(sessionId)
+    if (sessionId) {
+      const s = useSessionStore.getState()
+      // Reset store before switching to a new session to prevent stale transcript
+      if (s.sessionId !== sessionId) {
+        s.reset()
+      }
+      s.setSessionId(sessionId)
+    }
   }, [sessionId]) // stable: no store dependency
 
   if (!sessionId) {

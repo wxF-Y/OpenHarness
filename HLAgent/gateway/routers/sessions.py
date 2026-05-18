@@ -27,29 +27,27 @@ class CreateSessionRequest(BaseModel):
 
 @router.get("")
 async def list_sessions() -> list[dict[str, Any]]:
-    """List saved sessions from SessionBackend."""
-    import os
-    from openharness.services.session_backend import DEFAULT_SESSION_BACKEND
-    try:
-        cwd = os.getcwd()
-        sessions_dir = DEFAULT_SESSION_BACKEND.get_session_dir(cwd)
-        results: list[dict[str, Any]] = []
-        if Path(sessions_dir).exists():
-            for f in sorted(Path(sessions_dir).glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
-                try:
-                    import json
-                    data = json.loads(f.read_text(encoding="utf-8"))
-                    results.append({
-                        "session_id": f.stem,
-                        "model": data.get("model", ""),
-                        "cwd": data.get("cwd", cwd),
-                        "created_at": f.stat().st_mtime,
-                    })
-                except Exception:
-                    pass
-        return results
-    except Exception:
-        return []
+    """List active sessions from session_mgr (in-memory only).
+
+    NOTE: Only returns sessions active in current Gateway process.
+    Historical sessions from previous Gateway runs are not available
+    because HLAgent UUIDs and OpenHarness internal session IDs are
+    two separate systems — they cannot be safely cross-referenced.
+    """
+    results = []
+    for session_id in session_mgr.list_ids():
+        host = session_mgr.get(session_id)
+        if host is None:
+            continue
+        state = host.app_state if host.is_ready else None
+        results.append({
+            "session_id": session_id,
+            "model": state.model if state else "",
+            "cwd": state.cwd if state else "",
+            "ready": host.is_ready,
+        })
+    # Most recent sessions first
+    return list(reversed(results))
 
 
 @router.post("", status_code=201)

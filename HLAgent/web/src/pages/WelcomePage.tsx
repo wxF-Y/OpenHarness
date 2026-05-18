@@ -5,6 +5,7 @@ interface SessionSummary {
   session_id: string
   cwd?: string
   model?: string
+  ready?: boolean
 }
 
 export default function WelcomePage() {
@@ -61,7 +62,9 @@ export default function WelcomePage() {
 
       {sessions.length > 0 && (
         <div style={{ width: '100%', maxWidth: '36rem', marginBottom: '2.5rem' }}>
-          <div style={{ fontSize: '0.75rem', color: '#6c7086', marginBottom: '0.5rem', fontWeight: 600 }}>最近会话</div>
+          <div style={{ fontSize: '0.75rem', color: '#6c7086', marginBottom: '0.5rem', fontWeight: 600 }}>
+            本次启动的活跃会话
+          </div>
           <div style={{ backgroundColor: '#181825', border: '1px solid #313244', borderRadius: '8px', overflow: 'hidden' }}>
             {sessions.slice(0, 5).map((s, i) => (
               <button
@@ -69,10 +72,15 @@ export default function WelcomePage() {
                 onClick={() => navigate(`/chat/${s.session_id}`)}
                 style={{ width: '100%', textAlign: 'left', padding: '0.75rem 1rem', background: 'none', border: 'none', borderBottom: i < Math.min(sessions.length, 5) - 1 ? '1px solid #313244' : 'none', cursor: 'pointer', color: '#cdd6f4', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
               >
-                <span style={{ color: '#89b4fa' }}>💬</span>
+                <span style={{ color: s.ready ? '#89b4fa' : '#6c7086' }}>💬</span>
                 <div>
-                  <div style={{ fontSize: '0.875rem' }}>{s.session_id.slice(0, 12)}…</div>
-                  <div style={{ fontSize: '0.75rem', color: '#6c7086' }}>{s.model || 'claude'} · {s.cwd || '.'}</div>
+                  <div style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {s.session_id.slice(0, 12)}…
+                    {!s.ready && <span style={{ fontSize: '0.7rem', color: '#6c7086' }}>(未就绪)</span>}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6c7086' }}>
+                    {s.model || 'claude'} · {s.cwd || '.'}
+                  </div>
                 </div>
               </button>
             ))}
