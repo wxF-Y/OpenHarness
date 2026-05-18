@@ -49,7 +49,7 @@ export default function WelcomePage() {
       <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
         <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>⚡</div>
         <h1 style={{ fontSize: '2.5rem', fontWeight: 700, color: '#89b4fa', margin: '0 0 0.5rem' }}>HLAgent</h1>
-        <p style={{ color: '#a6adc8', margin: 0 }}>基于 OpenHarness 的现代 AI Agent Web 平台</p>
+        <p style={{ color: '#a6adc8', margin: 0 }}>现代 AI Agent Web 平台</p>
       </div>
 
       <button

@@ -1,5 +1,5 @@
 /**
- * Tool display configuration matching all 44 OpenHarness tools.
+ * Tool display configuration for HLAgent tools.
  * Mirrors TUI summarizeInput() logic and extends it for Web display.
  */
 
