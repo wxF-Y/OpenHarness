@@ -133,7 +133,7 @@ export function useWebSocket(sessionId: string | null) {
     if (!sessionId || terminatedRef.current) return
     useSessionStore.getState().setWsStatus('connecting')
 
-    const wsUrl = `ws://localhost:8000/ws/${sessionId}`
+    const wsUrl = `ws://localhost:7779/ws/${sessionId}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
