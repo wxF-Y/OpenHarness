@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -13,6 +14,13 @@ from services.session_manager import session_mgr
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
+# Track the active forward_events task per session.
+# Ensures only ONE consumer reads from the event queue at a time.
+# Without this, React StrictMode's double-mount creates two simultaneous
+# consumers; whichever wins the race gets tool_completed — the real
+# browser connection may end up with the tool stuck as pending forever.
+_active_event_tasks: dict[str, asyncio.Task] = {}
+
 
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
@@ -21,17 +29,27 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         await websocket.close(code=4004, reason="Session not found")
         return
 
+    # Displace any existing event consumer for this session before accepting.
+    # If the old task was blocked in next_event() the queue item is NOT
+    # consumed (asyncio.Queue.get() rolls back on CancelledError).
+    # If it was between get() and send_json(), the event is re-enqueued
+    # by the CancelledError handler inside forward_events().
+    old_task = _active_event_tasks.pop(session_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await old_task
+
     await websocket.accept()
 
     already_ready = host.is_ready
 
     if already_ready:
-        # Session is alive from a previous WS connection.
-        # Drain any stale events (e.g. leftover None sentinels) so forward_events
-        # doesn't exit immediately.
+        # Drain only None sentinels from previous shutdown — do NOT discard
+        # legitimate events queued while the browser was disconnected.
         host.drain_stale_events()
 
-        # Send synthetic ready to re-initialize client state.
+        # Re-initialise client state.
         state = host.app_state
         if state:
             try:
@@ -42,28 +60,37 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             except Exception as exc:
                 log.warning("Failed to send resync ready event: %s", exc)
 
-        # Clear the client's local transcript before replaying to avoid duplication.
-        # (The client store may still hold transcript from the previous WS connection.)
+        # Clear the client's local transcript before replaying.
         await websocket.send_json(BackendEvent(type="clear_transcript").model_dump())
 
-        # Replay conversation history so the client can restore its transcript.
+        # Replay conversation history.
         await _replay_transcript(websocket, host)
     else:
-        # Start the host runtime in the background (non-blocking, idempotent).
-        # host.run() internally calls build_runtime → start_runtime → emits ready.
-        # Gateway does NOT manually send a ready event on first connect.
         await host.start()
 
     async def forward_events() -> None:
-        """Read BackendEvents from host queue and send to WebSocket."""
-        while True:
-            event = await host.next_event()
-            if event is None:
-                break
-            try:
-                await websocket.send_json(event.model_dump())
-            except Exception:
-                break
+        """Read BackendEvents from host queue and send to WebSocket.
+
+        On CancelledError (displaced by a new connection), re-enqueue any
+        event that was retrieved from the queue but not yet sent.
+        """
+        event: BackendEvent | None = None
+        try:
+            while True:
+                event = await host.next_event()
+                if event is None:
+                    event = None  # sentinel — don't re-enqueue
+                    break
+                to_send = event
+                event = None   # clear ref before blocking send
+                await websocket.send_json(to_send.model_dump())
+        except asyncio.CancelledError:
+            if event is not None:
+                await host.requeue_event(event)
+            raise
+        except Exception:
+            if event is not None:
+                await host.requeue_event(event)
 
     async def forward_requests() -> None:
         """Read WebSocket messages and push to host input queue."""
@@ -78,6 +105,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             pass
 
     event_task = asyncio.create_task(forward_events())
+    _active_event_tasks[session_id] = event_task
     request_task = asyncio.create_task(forward_requests())
 
     try:
@@ -92,10 +120,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
     finally:
-        # DO NOT stop the host when WS disconnects.
-        # The session stays alive so the user can reconnect and continue.
-        # The host is only stopped explicitly via DELETE /api/sessions/{id}
-        # or when the user sends a shutdown FrontendRequest.
+        _active_event_tasks.pop(session_id, None)
         try:
             await websocket.close()
         except Exception:
@@ -103,13 +128,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 
 
 async def _replay_transcript(websocket: WebSocket, host: object) -> None:
-    """Replay conversation history to a newly (re-)connected WS client.
-
-    Converts engine.messages (ConversationMessage objects) into transcript_item
-    BackendEvents so the frontend can restore the visible conversation history.
-    User/assistant text messages are replayed. Tool calls/results are included
-    in a simplified form.
-    """
+    """Replay conversation history to a newly (re-)connected WS client."""
     try:
         from openharness.ui.protocol import TranscriptItem
         from openharness.engine.messages import ToolUseBlock, ToolResultBlock, TextBlock
@@ -124,27 +143,18 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
             if role not in ("user", "assistant"):
                 continue
 
-            # Extract text from text blocks
             text_parts = [
                 block.text for block in content
                 if isinstance(block, TextBlock) and block.text.strip()
             ]
-            # Extract tool uses (assistant side)
-            tool_uses = [
-                block for block in content if isinstance(block, ToolUseBlock)
-            ]
-            # Extract tool results (user side wrapping tool results)
-            tool_results = [
-                block for block in content if isinstance(block, ToolResultBlock)
-            ]
+            tool_uses = [block for block in content if isinstance(block, ToolUseBlock)]
+            tool_results = [block for block in content if isinstance(block, ToolResultBlock)]
 
-            # Send text portion
             if text_parts:
                 item = TranscriptItem(role=role, text="\n".join(text_parts))
                 event = BackendEvent(type="transcript_item", item=item)
                 await websocket.send_json(event.model_dump())
 
-            # Send tool calls (assistant) as tool transcript items
             for tu in tool_uses:
                 import json as _json
                 tool_text = f"{tu.name} {_json.dumps(tu.input, ensure_ascii=False)[:200]}"
@@ -158,7 +168,6 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
                     BackendEvent(type="transcript_item", item=item).model_dump()
                 )
 
-            # Send tool results (user)
             for tr in tool_results:
                 content_str = tr.content if isinstance(tr.content, str) else str(tr.content)
                 item = TranscriptItem(
@@ -172,4 +181,3 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
 
     except Exception as exc:
         log.warning("Failed to replay transcript: %s", exc)
-

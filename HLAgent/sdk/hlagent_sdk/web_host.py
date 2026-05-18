@@ -69,22 +69,38 @@ class WebBackendHost(ReactBackendHost):
             self._run_task = asyncio.create_task(self.run(), name="web-backend-host")
 
     def drain_stale_events(self) -> None:
-        """Drain leftover events/sentinels from a previous WS connection.
+        """Drain only None (EOF) sentinels left by a previous shutdown.
 
-        Called when a new WS client connects to an already-running session so
-        that stale None sentinels from previous shutdowns don't cause the
-        forward_events loop to exit prematurely.
+        Legitimate events queued while the browser was disconnected are
+        preserved so they can be forwarded by the new WS consumer.
         """
-        drained = 0
+        items: list[BackendEvent] = []
+        drained_nones = 0
         while not self._event_queue.empty():
             try:
-                self._event_queue.get_nowait()
-                drained += 1
+                item = self._event_queue.get_nowait()
+                if item is None:
+                    drained_nones += 1
+                else:
+                    items.append(item)
             except Exception:
                 break
-        if drained:
+        # Restore legitimate events in original order
+        for item in items:
+            self._event_queue.put_nowait(item)
+        if drained_nones:
             import logging
-            logging.getLogger(__name__).debug("Drained %d stale events from queue", drained)
+            logging.getLogger(__name__).debug(
+                "Drained %d stale None sentinel(s) from queue", drained_nones
+            )
+
+    async def requeue_event(self, event: BackendEvent) -> None:
+        """Re-enqueue an event retrieved from the queue but not yet sent.
+
+        Called by the forward_events coroutine when it is displaced by a
+        newer WS connection (CancelledError) so the event is not lost.
+        """
+        await self._event_queue.put(event)
 
     async def stop(self) -> None:
         """Signal the host to shut down gracefully."""
