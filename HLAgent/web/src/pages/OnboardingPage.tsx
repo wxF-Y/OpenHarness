@@ -14,10 +14,10 @@ type Provider = 'anthropic' | 'openai' | 'claude_subscription' | 'copilot' | 'cu
 
 const PROVIDERS: { id: Provider; label: string; desc: string; recommended?: boolean; needsCli?: boolean }[] = [
   { id: 'anthropic', label: 'Anthropic API Key', desc: 'Claude API 密钥（推荐）', recommended: true },
-  { id: 'openai', label: 'OpenAI Compatible', desc: 'OpenAI 或兼容接口' },
+  { id: 'openai', label: 'OpenAI Compatible', desc: 'OpenAI / 小米 Mimo / DeepSeek 等兼容接口' },
   { id: 'claude_subscription', label: 'Claude Subscription', desc: 'claude.ai 订阅用户（需 CLI）', needsCli: true },
   { id: 'copilot', label: 'GitHub Copilot', desc: 'GitHub Copilot 订阅（需 CLI）', needsCli: true },
-  { id: 'custom', label: '自定义', desc: '手动输入 base_url 和 API Key' },
+  { id: 'custom', label: '自定义', desc: '手动指定 base_url / API Key / 模型名 / API 格式' },
 ]
 
 const FEATURES = [
@@ -36,6 +36,8 @@ export default function OnboardingPage() {
   const [provider, setProvider] = useState<Provider>('anthropic')
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
+  const [model, setModel] = useState('')
+  const [apiFormat, setApiFormat] = useState<'anthropic' | 'openai_compat' | 'openai'>('openai_compat')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saveOk, setSaveOk] = useState(false)
@@ -190,8 +192,50 @@ export default function OnboardingPage() {
                 style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box' }}
                 placeholder="https://api.openai.com/v1"
               />
+              <div style={{ fontSize: '0.7rem', color: '#6c7086', marginTop: '0.2rem' }}>
+                示例：https://token-plan-cn.xiaomimimo.com/v1（小米 Mimo）
+              </div>
             </div>
           )}
+
+          {(provider === 'openai' || provider === 'custom') && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>
+                Model（模型名称）
+              </label>
+              <input
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box' }}
+                placeholder="gpt-4o / mimo-v2.5-pro / deepseek-chat …"
+              />
+              <div style={{ fontSize: '0.7rem', color: '#6c7086', marginTop: '0.2rem' }}>
+                填写 API 文档中的模型 ID，如 mimo-v2.5-pro
+              </div>
+            </div>
+          )}
+
+          {provider === 'custom' && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>
+                API 格式
+              </label>
+              <select
+                value={apiFormat}
+                onChange={(e) => setApiFormat(e.target.value as typeof apiFormat)}
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box' }}
+              >
+                <option value="openai_compat">OpenAI Compatible（OpenAI 兼容，适用大多数第三方 API）</option>
+                <option value="openai">OpenAI（标准 OpenAI 接口）</option>
+                <option value="anthropic">Anthropic（Claude 官方格式）</option>
+              </select>
+              <div style={{ fontSize: '0.7rem', color: '#f9e2af', marginTop: '0.2rem' }}>
+                ⚠️ 小米 Mimo / DeepSeek / 阿里云 等第三方 API 请选 OpenAI Compatible
+              </div>
+            </div>
+          )}
+
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>
               API Key *
@@ -207,7 +251,8 @@ export default function OnboardingPage() {
             />
             <div style={{ fontSize: '0.75rem', color: '#6c7086', marginTop: '0.25rem' }}>
               {provider === 'anthropic' && '从 console.anthropic.com 获取'}
-              {provider === 'openai' && '从 platform.openai.com 获取'}
+              {provider === 'openai' && '从 API 服务商控制台获取'}
+              {provider === 'custom' && 'API Key / Token（如无可填任意值）'}
             </div>
           </div>
 
@@ -219,7 +264,11 @@ export default function OnboardingPage() {
               if (!apiKey.trim()) { setSaveError('请输入 API Key'); return }
               setSaving(true); setSaveError('')
               const body: Record<string, string> = { provider, api_key: apiKey }
-              if (provider !== 'anthropic') body.base_url = baseUrl
+              if (provider !== 'anthropic') {
+                body.base_url = baseUrl
+                if (model.trim()) body.model = model.trim()
+                body.api_format = provider === 'custom' ? apiFormat : 'openai_compat'
+              }
               const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
               setSaving(false)
               if (r.ok) { setSaveOk(true); setTimeout(() => setStep(4), 800) }

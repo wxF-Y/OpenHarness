@@ -18,6 +18,7 @@ async def get_settings() -> dict[str, Any]:
     return {
         "model": s.model,
         "provider": getattr(s, "provider", ""),
+        "api_format": getattr(s, "api_format", ""),
         "fast_mode": s.fast_mode,
         "effort": s.effort,
         "passes": s.passes,
@@ -39,6 +40,9 @@ class PatchSettingsRequest(BaseModel):
     voice_mode: bool | None = None
     output_style: str | None = None
     theme: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    api_format: str | None = None
     cwd: str | None = None
 
 
@@ -46,22 +50,11 @@ class PatchSettingsRequest(BaseModel):
 async def patch_settings(req: PatchSettingsRequest) -> dict[str, Any]:
     s = load_settings()
     updates: dict[str, Any] = {}
-    if req.fast_mode is not None:
-        updates["fast_mode"] = req.fast_mode
-    if req.effort is not None:
-        updates["effort"] = req.effort
-    if req.passes is not None:
-        updates["passes"] = req.passes
-    if req.max_turns is not None:
-        updates["max_turns"] = req.max_turns
-    if req.vim_mode is not None:
-        updates["vim_mode"] = req.vim_mode
-    if req.voice_mode is not None:
-        updates["voice_mode"] = req.voice_mode
-    if req.output_style is not None:
-        updates["output_style"] = req.output_style
-    if req.theme is not None:
-        updates["theme"] = req.theme
+    for field in ("fast_mode", "effort", "passes", "max_turns", "vim_mode",
+                  "voice_mode", "output_style", "theme", "model", "base_url", "api_format"):
+        val = getattr(req, field, None)
+        if val is not None:
+            updates[field] = val
 
     if updates:
         updated = s.model_copy(update=updates)

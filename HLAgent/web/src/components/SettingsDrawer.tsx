@@ -10,6 +10,8 @@ interface Settings {
   output_style: string
   theme: string
   model: string
+  base_url?: string
+  api_format?: string
 }
 
 interface Props {
@@ -127,8 +129,47 @@ export default function SettingsDrawer({ onClose }: Props) {
             />
           </div>
 
-          <div style={{ borderTop: '1px solid #313244', paddingTop: '0.75rem', fontSize: '0.75rem', color: '#6c7086' }}>
-            模型: {settings.model || '未设置'}
+          <div style={{ borderTop: '1px solid #313244', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {/* Model */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>模型名称</label>
+              <input
+                type="text"
+                defaultValue={settings.model || ''}
+                onBlur={(e) => { if (e.target.value !== settings.model) patch({ model: e.target.value }) }}
+                placeholder="gpt-4o / mimo-v2.5-pro / claude-sonnet-4-6"
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem 0.6rem', color: '#cdd6f4', boxSizing: 'border-box', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            {/* Base URL */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>Base URL（第三方接口）</label>
+              <input
+                type="text"
+                defaultValue={settings.base_url || ''}
+                onBlur={(e) => { if (e.target.value !== (settings.base_url || '')) patch({ base_url: e.target.value } as never) }}
+                placeholder="留空使用默认（Anthropic/OpenAI 官方）"
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem 0.6rem', color: '#cdd6f4', boxSizing: 'border-box', fontSize: '0.8125rem' }}
+              />
+            </div>
+
+            {/* API Format */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>API 格式</label>
+              <select
+                value={settings.api_format || 'anthropic'}
+                onChange={(e) => patch({ api_format: e.target.value } as never)}
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem', color: '#cdd6f4' }}
+              >
+                <option value="anthropic">Anthropic（Claude 官方）</option>
+                <option value="openai_compat">OpenAI Compatible（第三方兼容接口）</option>
+                <option value="openai">OpenAI（OpenAI 标准）</option>
+              </select>
+              <div style={{ fontSize: '0.7rem', color: '#f9e2af', marginTop: '0.2rem' }}>
+                ⚠️ 小米 Mimo / DeepSeek 等第三方 API 请选 OpenAI Compatible
+              </div>
+            </div>
           </div>
         </div>
       </div>
