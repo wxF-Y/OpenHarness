@@ -69,26 +69,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         await host.start()
 
     async def forward_events() -> None:
-        """Read BackendEvents from host queue and send to WebSocket.
-
-        On CancelledError (displaced by a new connection), re-enqueue any
-        event that was retrieved from the queue but not yet sent.
-        """
+        """Read BackendEvents from host queue and send to WebSocket."""
         event: BackendEvent | None = None
         try:
             while True:
+                log.info("[FWD] waiting for next event (session=%s)", session_id[:8])
                 event = await host.next_event()
                 if event is None:
-                    event = None  # sentinel — don't re-enqueue
+                    log.info("[FWD] sentinel received, exiting (session=%s)", session_id[:8])
                     break
-                to_send = event
-                event = None   # clear ref before blocking send
-                await websocket.send_json(to_send.model_dump())
+                log.info("[FWD] sending event type=%s (session=%s)", event.type, session_id[:8])
+                await websocket.send_json(event.model_dump())
+                event = None  # clear only after successful send
         except asyncio.CancelledError:
             if event is not None:
                 await host.requeue_event(event)
             raise
-        except Exception:
+        except Exception as exc:
+            log.warning("[FWD] send error, requeuing event: %s", exc)
             if event is not None:
                 await host.requeue_event(event)
 

@@ -153,6 +153,7 @@ export function useWebSocket(sessionId: string | null) {
 
     ws.onclose = (e) => {
       if (terminatedRef.current) return
+      if (wsRef.current !== ws) return  // 此 WS 已被新连接替代，不触发重连
       useSessionStore.getState().setWsStatus('disconnected')
       if (e.code !== 4004) {
         retryTimerRef.current = setTimeout(() => {

@@ -69,30 +69,22 @@ class WebBackendHost(ReactBackendHost):
             self._run_task = asyncio.create_task(self.run(), name="web-backend-host")
 
     def drain_stale_events(self) -> None:
-        """Drain only None (EOF) sentinels left by a previous shutdown.
+        """Drain all queued events from the previous WS connection.
 
-        Legitimate events queued while the browser was disconnected are
-        preserved so they can be forwarded by the new WS consumer.
+        Called on reconnect; clears all buffered events so the replay +
+        clear_transcript mechanism delivers a clean, consistent state.
+        engine.messages is the authoritative source replayed to the client.
         """
-        items: list[BackendEvent] = []
-        drained_nones = 0
+        count = 0
         while not self._event_queue.empty():
             try:
-                item = self._event_queue.get_nowait()
-                if item is None:
-                    drained_nones += 1
-                else:
-                    items.append(item)
+                self._event_queue.get_nowait()
+                count += 1
             except Exception:
                 break
-        # Restore legitimate events in original order
-        for item in items:
-            self._event_queue.put_nowait(item)
-        if drained_nones:
+        if count:
             import logging
-            logging.getLogger(__name__).debug(
-                "Drained %d stale None sentinel(s) from queue", drained_nones
-            )
+            logging.getLogger(__name__).debug("Drained %d stale events from queue", count)
 
     async def requeue_event(self, event: BackendEvent) -> None:
         """Re-enqueue an event retrieved from the queue but not yet sent.
