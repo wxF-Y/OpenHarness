@@ -69,12 +69,25 @@ export default function TranscriptViewer({ items, assistantBuffer }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const prevLenRef = useRef(0)
 
   useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
+    if (!autoScroll) return
+    const delta = items.length - prevLenRef.current
+    prevLenRef.current = items.length
+
+    // Bulk replay (multiple items added at once) → instant jump, no animation stack
+    // Single item (real-time chat) → smooth animation
+    const behavior: ScrollBehavior = delta > 1 || (delta === 0 && assistantBuffer) ? 'instant' : 'smooth'
+    bottomRef.current?.scrollIntoView({ behavior })
   }, [items.length, assistantBuffer, autoScroll])
+
+  // When transcript is cleared (clear_transcript event), reset counter
+  useEffect(() => {
+    if (items.length === 0) {
+      prevLenRef.current = 0
+    }
+  }, [items.length])
 
   function handleScroll() {
     const el = containerRef.current
