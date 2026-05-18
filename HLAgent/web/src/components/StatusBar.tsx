@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSessionStore, type WsStatus } from '../stores/sessionStore'
 import { useSwarmStore } from '../stores/swarmStore'
+import type { FrontendRequest } from '../types/protocol'
 
 function dot(status: WsStatus) {
   const colors: Record<WsStatus, string> = {
@@ -12,7 +13,49 @@ function dot(status: WsStatus) {
   return <span style={{ color: colors[status] }}>●</span>
 }
 
-export default function StatusBar({ onReconnect }: { onReconnect?: () => void }) {
+interface PermBadgeProps {
+  mode: string
+  canClick: boolean
+  onClick: () => void
+}
+
+function PermBadge({ mode, canClick, onClick }: PermBadgeProps) {
+  const isPlan = mode === 'plan' || mode === 'Plan Mode'
+  const isAuto = mode === 'full_auto' || mode === 'Auto'
+
+  const label = isPlan ? 'PLAN' : isAuto ? 'auto' : 'default'
+  const color = isPlan ? '#f9e2af' : isAuto ? '#a6e3a1' : '#6c7086'
+  const bg = isPlan ? '#f9e2af' : 'transparent'
+  const textColor = isPlan ? '#1e1e2e' : color
+
+  return (
+    <span
+      onClick={canClick ? onClick : undefined}
+      title={canClick ? '点击切换权限模式' : undefined}
+      style={{
+        backgroundColor: bg,
+        color: textColor,
+        padding: '0 0.3rem',
+        borderRadius: '3px',
+        fontWeight: isPlan ? 700 : undefined,
+        cursor: canClick ? 'pointer' : 'default',
+        border: !isPlan ? `1px solid ${color}33` : 'none',
+        fontSize: '0.65rem',
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+export default function StatusBar({
+  onReconnect,
+  sendRequest,
+}: {
+  onReconnect?: () => void
+  sendRequest?: (req: FrontendRequest) => void
+}) {
   const store = useSessionStore()
   const { unreadCount } = useSwarmStore()
   const state = store.appState
@@ -31,6 +74,12 @@ export default function StatusBar({ onReconnect }: { onReconnect?: () => void })
   const mcpConnected = state?.mcp_connected ?? 0
   const mcpFailed = state?.mcp_failed ?? 0
   const model = state?.model || ''
+  const isReady = store.wsStatus === 'ready'
+
+  function handlePermClick() {
+    if (!isReady || !sendRequest) return
+    sendRequest({ type: 'select_command', command: 'permissions' })
+  }
 
   return (
     <div style={{
@@ -44,12 +93,18 @@ export default function StatusBar({ onReconnect }: { onReconnect?: () => void })
       {/* Model */}
       {model && <span style={{ color: '#a6adc8' }}>{model}</span>}
 
-      {/* Plan mode */}
-      {isPlan && (
-        <span style={{ backgroundColor: '#f9e2af', color: '#1e1e2e', padding: '0 0.3rem', borderRadius: '3px', fontWeight: 700 }}>PLAN</span>
+      {/* Permission mode badge — only when WS session active */}
+      {isReady && (
+        <PermBadge
+          mode={store.planMode}
+          canClick={isReady && !!sendRequest}
+          onClick={handlePermClick}
+        />
       )}
+
+      {/* Plan mode flash on exit */}
       {planFlash && !isPlan && (
-        <span style={{ color: '#a6e3a1', fontWeight: 700 }}>PLAN OFF</span>
+        <span style={{ color: '#a6e3a1', fontWeight: 700, fontSize: '0.65rem' }}>PLAN OFF</span>
       )}
 
       {/* Fast mode */}
@@ -81,3 +136,4 @@ export default function StatusBar({ onReconnect }: { onReconnect?: () => void })
     </div>
   )
 }
+

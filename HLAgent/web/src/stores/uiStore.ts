@@ -17,6 +17,7 @@ export interface ErrorToast {
   id: string
   message: string
   createdAt: number
+  type?: 'error' | 'warning' | 'info'
 }
 
 interface UiState {
@@ -25,7 +26,7 @@ interface UiState {
   errorToasts: ErrorToast[]
   setActiveModal: (modal: ActiveModal) => void
   setCompactPhase: (phase: string | null) => void
-  addErrorToast: (message: string) => void
+  addErrorToast: (message: string, type?: 'error' | 'warning' | 'info') => void
   removeErrorToast: (id: string) => void
 }
 
@@ -36,13 +37,14 @@ export const useUiStore = create<UiState>((set) => ({
 
   setActiveModal: (activeModal) => set({ activeModal }),
   setCompactPhase: (compactPhase) => set({ compactPhase }),
-  addErrorToast: (message) =>
+  addErrorToast: (message, type = 'error') =>
     set((prev) => ({
       errorToasts: [
         ...prev.errorToasts,
-        { id: crypto.randomUUID(), message, createdAt: Date.now() },
+        { id: crypto.randomUUID(), message, createdAt: Date.now(), type },
       ],
     })),
   removeErrorToast: (id) =>
     set((prev) => ({ errorToasts: prev.errorToasts.filter((t) => t.id !== id) })),
 }))
+

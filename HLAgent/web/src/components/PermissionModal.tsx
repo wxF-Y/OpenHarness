@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { FrontendRequest } from '../types/protocol'
+import { useUiStore } from '../stores/uiStore'
 
 interface Props {
   toolName?: string
@@ -10,25 +11,45 @@ interface Props {
 }
 
 export default function PermissionModal({ toolName, reason, requestId, sendRequest, onClose }: Props) {
-  useEffect(() => {
-    function handle(e: KeyboardEvent) {
-      if (e.key.toLowerCase() === 'y') {
-        sendRequest({ type: 'permission_response', request_id: requestId, allowed: true })
-        onClose()
-      } else if (e.key.toLowerCase() === 'n' || e.key === 'Escape') {
-        sendRequest({ type: 'permission_response', request_id: requestId, allowed: false })
-        onClose()
-      } else if (e.key === 'Enter') {
-        sendRequest({ type: 'permission_response', request_id: requestId, allowed: true })
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', handle)
-    return () => window.removeEventListener('keydown', handle)
-  }, [requestId, sendRequest, onClose])
+  const { addErrorToast } = useUiStore()
 
   const isSensitive = reason?.includes('sensitive credential') || reason?.includes('credential path')
   const isPackageInstall = reason?.includes('Package installation') || reason?.includes('package management')
+
+  function allowOnce() {
+    sendRequest({ type: 'permission_response', request_id: requestId, allowed: true })
+    onClose()
+  }
+
+  function deny() {
+    sendRequest({ type: 'permission_response', request_id: requestId, allowed: false })
+    onClose()
+  }
+
+  function allowAll() {
+    // 1. Allow the current request
+    sendRequest({ type: 'permission_response', request_id: requestId, allowed: true })
+    // 2. Switch to full_auto mode (writes to global settings)
+    sendRequest({ type: 'submit_line', line: '/permissions full_auto' })
+    onClose()
+    // 3. Warn user with a warning-style toast
+    addErrorToast(
+      '已切换到全自动模式。所有工具将自动放行，重启 Gateway 后仍生效。',
+      'warning'
+    )
+  }
+
+  useEffect(() => {
+    function handle(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === 'y') { allowOnce() }
+      else if (e.key.toLowerCase() === 'n' || e.key === 'Escape') { deny() }
+      else if (e.key === 'Enter') { allowOnce() }
+      else if ((e.key === 'a' || e.key === 'A') && !isSensitive) { allowAll() }
+    }
+    window.addEventListener('keydown', handle)
+    return () => window.removeEventListener('keydown', handle)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId, isSensitive])
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -60,24 +81,34 @@ export default function PermissionModal({ toolName, reason, requestId, sendReque
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button
-            onClick={() => { sendRequest({ type: 'permission_response', request_id: requestId, allowed: false }); onClose() }}
+            onClick={deny}
             style={{ backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: 'pointer', fontSize: '0.875rem' }}
           >
             N 拒绝
           </button>
           <button
-            onClick={() => { sendRequest({ type: 'permission_response', request_id: requestId, allowed: true }); onClose() }}
+            onClick={allowOnce}
             style={{ backgroundColor: isSensitive ? '#f38ba8' : '#a6e3a1', color: '#1e1e2e', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
           >
             Y 允许
           </button>
+          {!isSensitive && (
+            <button
+              onClick={allowAll}
+              title="切换到全自动模式，后续工具将自动放行（写入全局配置）"
+              style={{ backgroundColor: '#313244', color: '#f9e2af', border: '1px solid #f9e2af44', borderRadius: '6px', padding: '0.5rem 0.75rem', cursor: 'pointer', fontSize: '0.8125rem' }}
+            >
+              ⚡ 本次全部允许
+            </button>
+          )}
         </div>
         <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#45475a', marginTop: '0.75rem' }}>
-          键盘: Y 允许 / N 或 Esc 拒绝 / Enter 允许
+          Y/Enter 允许 · N/Esc 拒绝{!isSensitive ? ' · A 本次全部允许' : ''}
         </div>
       </div>
     </div>
   )
 }
+

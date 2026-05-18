@@ -63,7 +63,7 @@ export default function ChatPage() {
       />
 
       {/* Status bar */}
-      <StatusBar />
+      <StatusBar sendRequest={sendRequest} />
 
       {/* Modals */}
       {ui.activeModal?.kind === 'permission' && (

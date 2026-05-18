@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSessionStore } from '../stores/sessionStore'
 
 interface Settings {
   fast_mode: boolean
@@ -12,6 +13,7 @@ interface Settings {
   model: string
   base_url?: string
   api_format?: string
+  permission_mode?: string
 }
 
 interface Props {
@@ -21,9 +23,16 @@ interface Props {
 export default function SettingsDrawer({ onClose }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [saving, setSaving] = useState(false)
+  const [permMode, setPermMode] = useState<string>('default')
+  const [permSaved, setPermSaved] = useState(false)
+  const sessionStore = useSessionStore()
+  const currentSessionMode = sessionStore.wsStatus === 'ready' ? sessionStore.planMode : null
 
   useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then(setSettings).catch(() => {})
+    fetch('/api/settings').then((r) => r.json()).then((s) => {
+      setSettings(s)
+      setPermMode(s.permission_mode || 'default')
+    }).catch(() => {})
   }, [])
 
   async function patch(updates: Partial<Settings>) {
@@ -168,6 +177,61 @@ export default function SettingsDrawer({ onClose }: Props) {
               </select>
               <div style={{ fontSize: '0.7rem', color: '#f9e2af', marginTop: '0.2rem' }}>
                 ⚠️ 小米 Mimo / DeepSeek 等第三方 API 请选 OpenAI Compatible
+              </div>
+            </div>
+
+            {/* Permission Mode */}
+            <div style={{ borderTop: '1px solid #313244', paddingTop: '0.75rem' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                默认权限模式
+              </label>
+              <div style={{ fontSize: '0.75rem', color: '#6c7086', marginBottom: '0.5rem' }}>
+                影响新会话启动时的初始权限；当前会话可用 /permissions 命令覆盖
+              </div>
+              {(['default', 'plan', 'full_auto'] as const).map((mode) => {
+                const labels: Record<string, string> = {
+                  default: 'Default — 逐一确认写操作（推荐）',
+                  plan: 'Plan Mode — 阻断所有写操作',
+                  full_auto: 'Full Auto — 全部自动放行',
+                }
+                return (
+                  <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="permission_mode"
+                      value={mode}
+                      checked={permMode === mode}
+                      onChange={() => setPermMode(mode)}
+                      style={{ accentColor: '#89b4fa' }}
+                    />
+                    <span style={{ fontSize: '0.8125rem', color: '#cdd6f4' }}>{labels[mode]}</span>
+                  </label>
+                )
+              })}
+              <button
+                onClick={async () => {
+                  setSaving(true)
+                  await fetch('/api/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ permission_mode: permMode }),
+                  })
+                  setSaving(false)
+                  setSettings((s) => s ? { ...s, permission_mode: permMode } : s)
+                  setPermSaved(true)
+                  setTimeout(() => setPermSaved(false), 2000)
+                }}
+                disabled={saving}
+                style={{ marginTop: '0.5rem', backgroundColor: permSaved ? '#a6e3a1' : '#313244', color: permSaved ? '#1e1e2e' : '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem 0.75rem', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.8125rem', width: '100%' }}
+              >
+                {permSaved ? '✓ 已保存' : '保存全局默认'}
+              </button>
+
+              {/* Current session mode comparison */}
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#6c7086' }}>
+                {currentSessionMode
+                  ? `当前会话模式: ${currentSessionMode}${currentSessionMode !== permMode ? `（与全局默认 ${permMode} 不同）` : ''}`
+                  : '暂无活跃会话'}
               </div>
             </div>
           </div>
