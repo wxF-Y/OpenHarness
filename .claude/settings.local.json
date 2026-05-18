@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m git_filter_repo --version)",
+      "Bash(git filter-repo *)",
+      "Bash(pip install *)",
+      "Bash(C:/Users/lds/.pyenv/pyenv-win/versions/3.9.8/python.exe -m git_filter_repo --version)",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git merge hlagent-clean/main --allow-unrelated-histories -m 'feat: integrate HLAgent platform into OpenHarness hlagent branch *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m 'chore: remove tracked __pycache__ files from HLAgent/ in OpenHarness *)",
+      "Bash(gh auth *)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'docs: add openspec design artifacts for hlagent-web-platform *)",
+      "Bash(git commit -m 'docs: track openspec design artifacts and .claude commands/skills *)"
+    ]
+  }
+}
