@@ -42,8 +42,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             except Exception as exc:
                 log.warning("Failed to send resync ready event: %s", exc)
 
+        # Clear the client's local transcript before replaying to avoid duplication.
+        # (The client store may still hold transcript from the previous WS connection.)
+        await websocket.send_json(BackendEvent(type="clear_transcript").model_dump())
+
         # Replay conversation history so the client can restore its transcript.
-        # We replay user/assistant text + tool calls from the engine's message list.
         await _replay_transcript(websocket, host)
     else:
         # Start the host runtime in the background (non-blocking, idempotent).
