@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from openharness.ui.protocol import FrontendRequest
+from openharness.ui.protocol import FrontendRequest, BackendEvent
 
 from services.session_manager import session_mgr
 
@@ -23,10 +23,29 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 
     await websocket.accept()
 
-    # Start the host runtime in the background (non-blocking).
-    # host.run() internally calls build_runtime → start_runtime → emits ready event.
-    # Gateway does NOT manually send a ready event.
-    await host.start()
+    already_ready = host.is_ready
+
+    if already_ready:
+        # Session is alive from a previous WS connection.
+        # Drain any stale events (e.g. leftover None sentinels) so forward_events
+        # doesn't exit immediately.
+        host.drain_stale_events()
+
+        # Send a synthetic ready event to re-initialize the client state.
+        state = host.app_state
+        if state:
+            try:
+                from openharness.tasks import get_task_manager
+                tasks = get_task_manager().list_tasks()
+                resync = BackendEvent.ready(state, tasks, host.commands)
+                await websocket.send_json(resync.model_dump())
+            except Exception as exc:
+                log.warning("Failed to send resync ready event: %s", exc)
+    else:
+        # Start the host runtime in the background (non-blocking, idempotent).
+        # host.run() internally calls build_runtime → start_runtime → emits ready.
+        # Gateway does NOT manually send a ready event on first connect.
+        await host.start()
 
     async def forward_events() -> None:
         """Read BackendEvents from host queue and send to WebSocket."""
@@ -66,9 +85,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             except (asyncio.CancelledError, Exception):
                 pass
     finally:
-        if host.is_ready:
-            await host.stop()
+        # DO NOT stop the host when WS disconnects.
+        # The session stays alive so the user can reconnect and continue.
+        # The host is only stopped explicitly via DELETE /api/sessions/{id}
+        # or when the user sends a shutdown FrontendRequest.
         try:
             await websocket.close()
         except Exception:
             pass
+

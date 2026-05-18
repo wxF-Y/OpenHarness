@@ -22,13 +22,17 @@ export default function ChatPage() {
   useEffect(() => {
     if (sessionId) {
       const s = useSessionStore.getState()
-      // Reset store before switching to a new session to prevent stale transcript
       if (s.sessionId !== sessionId) {
+        // Different session — full reset
         s.reset()
+      } else if (s.wsStatus === 'terminated') {
+        // Same session but was terminated (e.g. navigated away after shutdown).
+        // Reset WS status so the hook can reconnect — preserve transcript.
+        s.setWsStatus('disconnected')
       }
       s.setSessionId(sessionId)
     }
-  }, [sessionId]) // stable: no store dependency
+  }, [sessionId])
 
   if (!sessionId) {
     return (

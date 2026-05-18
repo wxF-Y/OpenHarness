@@ -46,6 +46,7 @@ class WebBackendHost(ReactBackendHost):
         super().__init__(config)
         self._ws_input_queue: asyncio.Queue[FrontendRequest | None] = asyncio.Queue()
         self._event_queue: asyncio.Queue[BackendEvent | None] = asyncio.Queue()
+        self._run_task: asyncio.Task | None = None  # track the run() task
 
     # ------------------------------------------------------------------ #
     # Public interface for Gateway
@@ -63,8 +64,27 @@ class WebBackendHost(ReactBackendHost):
         return await self._event_queue.get()
 
     async def start(self) -> None:
-        """Run the agent loop as a background task (non-blocking)."""
-        asyncio.create_task(self.run(), name="web-backend-host")
+        """Run the agent loop as a background task (idempotent — only starts once)."""
+        if self._run_task is None or self._run_task.done():
+            self._run_task = asyncio.create_task(self.run(), name="web-backend-host")
+
+    def drain_stale_events(self) -> None:
+        """Drain leftover events/sentinels from a previous WS connection.
+
+        Called when a new WS client connects to an already-running session so
+        that stale None sentinels from previous shutdowns don't cause the
+        forward_events loop to exit prematurely.
+        """
+        drained = 0
+        while not self._event_queue.empty():
+            try:
+                self._event_queue.get_nowait()
+                drained += 1
+            except Exception:
+                break
+        if drained:
+            import logging
+            logging.getLogger(__name__).debug("Drained %d stale events from queue", drained)
 
     async def stop(self) -> None:
         """Signal the host to shut down gracefully."""
