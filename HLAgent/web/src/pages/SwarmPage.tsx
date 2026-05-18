@@ -47,10 +47,36 @@ export default function SwarmPage() {
   const [transcript, setTranscript] = useState<string>('')
   const [mailbox, setMailbox] = useState<MailboxMsg[]>([])
   const [msgText, setMsgText] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamDesc, setNewTeamDesc] = useState('')
+  const [createError, setCreateError] = useState('')
+
+  function refreshTeams() {
+    fetch('/api/swarm/teams').then((r) => r.json()).then(setTeams).catch(() => {})
+  }
 
   useEffect(() => {
-    fetch('/api/swarm/teams').then((r) => r.json()).then(setTeams).catch(() => {})
+    refreshTeams()
   }, [])
+
+  async function createTeam() {
+    if (!newTeamName.trim()) return
+    const r = await fetch('/api/swarm/teams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTeamName.trim(), description: newTeamDesc.trim() }),
+    }).catch(() => null)
+    if (r?.ok) {
+      setCreating(false)
+      setNewTeamName('')
+      setNewTeamDesc('')
+      setCreateError('')
+      refreshTeams()
+    } else {
+      setCreateError('创建失败，请重试')
+    }
+  }
 
   async function selectTeam(name: string) {
     setSelectedTeam(name)
@@ -117,7 +143,14 @@ export default function SwarmPage() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Team list */}
         <div style={{ width: '180px', borderRight: '1px solid #313244', overflowY: 'auto', flexShrink: 0 }}>
-          <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#6c7086', fontWeight: 700, textTransform: 'uppercase' }}>Teams</div>
+          <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#6c7086', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Teams</span>
+            <button
+              onClick={() => { setCreating(true); setCreateError('') }}
+              style={{ background: 'none', border: 'none', color: '#89b4fa', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0 0.1rem' }}
+              title="新建团队"
+            >+</button>
+          </div>
           {teams.map((t) => (
             <div
               key={t.name}
@@ -130,6 +163,36 @@ export default function SwarmPage() {
           ))}
           {teams.length === 0 && <div style={{ padding: '0.75rem', color: '#6c7086', fontSize: '0.75rem', textAlign: 'center' }}>无团队</div>}
         </div>
+
+        {/* Create team modal */}
+        {creating && (
+          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+            <div style={{ backgroundColor: '#181825', borderRadius: '12px', padding: '1.5rem', width: '320px', border: '1px solid #313244' }}>
+              <h3 style={{ margin: '0 0 1rem', color: '#cdd6f4', fontSize: '1rem' }}>新建 Swarm 团队</h3>
+              <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>团队名称 *</label>
+              <input
+                autoFocus
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && createTeam()}
+                placeholder="例：dev-team"
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box', marginBottom: '0.75rem', fontFamily: 'monospace' }}
+              />
+              <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>描述（可选）</label>
+              <input
+                value={newTeamDesc}
+                onChange={(e) => setNewTeamDesc(e.target.value)}
+                placeholder="团队用途说明"
+                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box', marginBottom: '0.75rem' }}
+              />
+              {createError && <div style={{ color: '#f38ba8', fontSize: '0.8125rem', marginBottom: '0.5rem' }}>{createError}</div>}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button onClick={() => { setCreating(false); setCreateError('') }} style={{ flex: 1, background: '#313244', border: 'none', borderRadius: '6px', color: '#cdd6f4', padding: '0.5rem', cursor: 'pointer' }}>取消</button>
+                <button onClick={createTeam} disabled={!newTeamName.trim()} style={{ flex: 2, backgroundColor: newTeamName.trim() ? '#89b4fa' : '#313244', color: newTeamName.trim() ? '#1e1e2e' : '#6c7086', border: 'none', borderRadius: '6px', padding: '0.5rem', cursor: newTeamName.trim() ? 'pointer' : 'not-allowed', fontWeight: 600 }}>创建</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Members grid */}
         <div style={{ width: '260px', borderRight: '1px solid #313244', overflowY: 'auto', flexShrink: 0, padding: '0.5rem' }}>
