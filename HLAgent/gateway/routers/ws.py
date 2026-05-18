@@ -31,7 +31,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         # doesn't exit immediately.
         host.drain_stale_events()
 
-        # Send a synthetic ready event to re-initialize the client state.
+        # Send synthetic ready to re-initialize client state.
         state = host.app_state
         if state:
             try:
@@ -41,6 +41,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 await websocket.send_json(resync.model_dump())
             except Exception as exc:
                 log.warning("Failed to send resync ready event: %s", exc)
+
+        # Replay conversation history so the client can restore its transcript.
+        # We replay user/assistant text + tool calls from the engine's message list.
+        await _replay_transcript(websocket, host)
     else:
         # Start the host runtime in the background (non-blocking, idempotent).
         # host.run() internally calls build_runtime → start_runtime → emits ready.
@@ -93,4 +97,76 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+async def _replay_transcript(websocket: WebSocket, host: object) -> None:
+    """Replay conversation history to a newly (re-)connected WS client.
+
+    Converts engine.messages (ConversationMessage objects) into transcript_item
+    BackendEvents so the frontend can restore the visible conversation history.
+    User/assistant text messages are replayed. Tool calls/results are included
+    in a simplified form.
+    """
+    try:
+        from openharness.ui.protocol import TranscriptItem
+        from openharness.engine.messages import ToolUseBlock, ToolResultBlock, TextBlock
+
+        messages = host.get_messages()  # type: ignore[attr-defined]
+        if not messages:
+            return
+
+        for msg in messages:
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", [])
+            if role not in ("user", "assistant"):
+                continue
+
+            # Extract text from text blocks
+            text_parts = [
+                block.text for block in content
+                if isinstance(block, TextBlock) and block.text.strip()
+            ]
+            # Extract tool uses (assistant side)
+            tool_uses = [
+                block for block in content if isinstance(block, ToolUseBlock)
+            ]
+            # Extract tool results (user side wrapping tool results)
+            tool_results = [
+                block for block in content if isinstance(block, ToolResultBlock)
+            ]
+
+            # Send text portion
+            if text_parts:
+                item = TranscriptItem(role=role, text="\n".join(text_parts))
+                event = BackendEvent(type="transcript_item", item=item)
+                await websocket.send_json(event.model_dump())
+
+            # Send tool calls (assistant) as tool transcript items
+            for tu in tool_uses:
+                import json as _json
+                tool_text = f"{tu.name} {_json.dumps(tu.input, ensure_ascii=False)[:200]}"
+                item = TranscriptItem(
+                    role="tool",
+                    text=tool_text,
+                    tool_name=tu.name,
+                    tool_input=tu.input,
+                )
+                await websocket.send_json(
+                    BackendEvent(type="transcript_item", item=item).model_dump()
+                )
+
+            # Send tool results (user)
+            for tr in tool_results:
+                content_str = tr.content if isinstance(tr.content, str) else str(tr.content)
+                item = TranscriptItem(
+                    role="tool_result",
+                    text=content_str[:1000],
+                    is_error=tr.is_error,
+                )
+                await websocket.send_json(
+                    BackendEvent(type="transcript_item", item=item).model_dump()
+                )
+
+    except Exception as exc:
+        log.warning("Failed to replay transcript: %s", exc)
 
