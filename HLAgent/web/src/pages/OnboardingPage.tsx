@@ -6,8 +6,8 @@ interface OnboardingStatus {
   auth_status: string
   active_profile: string
   cwd: string
-  project_initialized: boolean
   version: string
+  // project_initialized removed — determined by user's chosen project dir
 }
 
 type Provider = 'anthropic' | 'openai' | 'claude_subscription' | 'copilot' | 'custom'
@@ -37,6 +37,9 @@ export default function OnboardingPage() {
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
   const [model, setModel] = useState('')
+  const [projectDir, setProjectDir] = useState('')
+  const [projectCheck, setProjectCheck] = useState<{ initialized: boolean; has_claude_md: boolean } | null>(null)
+  const [checkingProject, setCheckingProject] = useState(false)
   const [apiFormat, setApiFormat] = useState<'anthropic' | 'openai_compat' | 'openai'>('openai_compat')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -108,7 +111,6 @@ export default function OnboardingPage() {
           <div><span style={{ color: '#6c7086' }}>版本: </span>{status.version || '0.1.0'}</div>
           <div><span style={{ color: '#6c7086' }}>工作目录: </span><span style={{ color: '#a6adc8' }}>{status.cwd}</span></div>
           <div><span style={{ color: '#6c7086' }}>Auth 状态: </span><span style={{ color: '#f38ba8' }}>未配置</span></div>
-          {status.project_initialized && <div style={{ color: '#a6e3a1' }}>✓ 项目已初始化</div>}
         </div>
       )}
       <button onClick={() => setStep(2)} style={{ width: '100%', backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '8px', padding: '0.75rem', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>
@@ -290,40 +292,86 @@ export default function OnboardingPage() {
   // Step 4: Project init
   if (step === 4) return (
     <Card>
-      <h2 style={{ color: '#cdd6f4', margin: '0 0 0.5rem' }}>初始化项目（可选）</h2>
+      <h2 style={{ color: '#cdd6f4', margin: '0 0 0.5rem' }}>设置项目目录（可选）</h2>
       <p style={{ color: '#6c7086', fontSize: '0.875rem', margin: '0 0 1.5rem' }}>Step 4 / {totalSteps}</p>
       <StepDots />
 
-      {status?.project_initialized || initOk ? (
-        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{ color: '#a6e3a1', fontSize: '1.5rem', marginBottom: '0.5rem' }}>✓</div>
-          <div style={{ color: '#a6e3a1', fontSize: '0.9rem' }}>项目已初始化</div>
-          <div style={{ color: '#6c7086', fontSize: '0.75rem', marginTop: '0.25rem' }}>{status?.cwd}</div>
+      {/* Explanation */}
+      <div style={{ backgroundColor: '#11111b', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.8125rem', color: '#a6adc8', lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, color: '#cdd6f4', marginBottom: '0.35rem' }}>什么是 CLAUDE.md？</div>
+        AI Agent 在处理你的代码时，会自动读取项目根目录的 <code style={{ backgroundColor: '#313244', padding: '0.1em 0.3em', borderRadius: '3px', color: '#89b4fa' }}>CLAUDE.md</code> 文件，了解项目结构和编码规范。
+        <div style={{ marginTop: '0.4rem', color: '#6c7086', fontSize: '0.75rem' }}>
+          可以在任意项目中随时手动创建，此步骤可跳过。
         </div>
-      ) : (
-        <div style={{ marginBottom: '1.5rem' }}>
-          <p style={{ color: '#a6adc8', fontSize: '0.875rem', lineHeight: 1.6, margin: '0 0 1rem' }}>
-            在当前目录 <code style={{ backgroundColor: '#313244', padding: '0.1em 0.3em', borderRadius: '3px', fontSize: '0.85em', color: '#89b4fa' }}>{status?.cwd}</code> 创建 <code style={{ backgroundColor: '#313244', padding: '0.1em 0.3em', borderRadius: '3px', fontSize: '0.85em', color: '#89b4fa' }}>CLAUDE.md</code> 和 <code style={{ backgroundColor: '#313244', padding: '0.1em 0.3em', borderRadius: '3px', fontSize: '0.85em', color: '#89b4fa' }}>.openharness/</code> 目录，帮助 AI 更好地理解你的项目。
-          </p>
-          <button
-            onClick={async () => {
-              setSaving(true)
-              await fetch('/api/onboarding/init-project', { method: 'POST' })
-              setSaving(false)
-              setInitOk(true)
-            }}
-            disabled={saving}
-            style={{ width: '100%', backgroundColor: '#313244', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: '8px', padding: '0.6rem', cursor: saving ? 'not-allowed' : 'pointer', marginBottom: '0.5rem', opacity: saving ? 0.6 : 1 }}
-          >
-            {saving ? '初始化中…' : '初始化项目'}
-          </button>
+      </div>
+
+      {/* Directory input */}
+      <div style={{ marginBottom: '0.75rem' }}>
+        <label style={{ display: 'block', fontSize: '0.8125rem', color: '#6c7086', marginBottom: '0.25rem' }}>
+          项目目录路径
+        </label>
+        <input
+          type="text"
+          value={projectDir}
+          onChange={(e) => { setProjectDir(e.target.value); setProjectCheck(null) }}
+          placeholder="例：E:\my-project 或 /home/user/my-project"
+          style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.5rem 0.75rem', color: '#cdd6f4', outline: 'none', boxSizing: 'border-box', fontFamily: 'monospace', fontSize: '0.8125rem' }}
+        />
+        <div style={{ fontSize: '0.7rem', color: '#6c7086', marginTop: '0.2rem' }}>
+          填写你想用 AI 协助开发的项目根目录
+        </div>
+      </div>
+
+      {/* Check + status */}
+      {projectCheck && (
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', backgroundColor: projectCheck.initialized ? 'rgba(166,227,161,0.08)' : 'rgba(137,180,250,0.08)', border: `1px solid ${projectCheck.initialized ? '#a6e3a1' : '#313244'}`, fontSize: '0.8125rem' }}>
+          {projectCheck.initialized
+            ? <span style={{ color: '#a6e3a1' }}>✓ 已有 CLAUDE.md，无需重复初始化</span>
+            : <span style={{ color: '#89b4fa' }}>该目录尚未初始化，点击下方按钮创建 CLAUDE.md</span>
+          }
         </div>
       )}
+
+      {initOk && (
+        <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '6px', backgroundColor: 'rgba(166,227,161,0.08)', border: '1px solid #a6e3a1', fontSize: '0.8125rem', color: '#a6e3a1' }}>
+          ✓ 已创建 CLAUDE.md 和 .hlagent/ 目录
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <button
+          onClick={async () => {
+            if (!projectDir.trim()) return
+            setCheckingProject(true); setProjectCheck(null)
+            const r = await fetch(`/api/onboarding/check-project?cwd=${encodeURIComponent(projectDir.trim())}`).then(x => x.json()).catch(() => null)
+            setCheckingProject(false)
+            if (r?.exists) setProjectCheck(r)
+          }}
+          disabled={!projectDir.trim() || checkingProject}
+          style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.5rem', cursor: !projectDir.trim() || checkingProject ? 'not-allowed' : 'pointer', opacity: !projectDir.trim() || checkingProject ? 0.5 : 1, fontSize: '0.8125rem' }}
+        >
+          {checkingProject ? '检查中…' : '检查目录'}
+        </button>
+        <button
+          onClick={async () => {
+            if (!projectDir.trim()) return
+            setSaving(true)
+            const r = await fetch(`/api/onboarding/init-project?cwd=${encodeURIComponent(projectDir.trim())}`, { method: 'POST' }).then(x => x.json()).catch(() => null)
+            setSaving(false)
+            if (r?.status === 'initialized' || r?.message?.includes('already')) setInitOk(true)
+            setProjectCheck({ initialized: true, has_claude_md: true })
+          }}
+          disabled={saving || !projectDir.trim() || projectCheck?.initialized}
+          style={{ flex: 2, backgroundColor: saving || !projectDir.trim() || projectCheck?.initialized ? '#313244' : '#89b4fa', color: saving || !projectDir.trim() || projectCheck?.initialized ? '#6c7086' : '#1e1e2e', border: 'none', borderRadius: '6px', padding: '0.5rem', cursor: saving || !projectDir.trim() || projectCheck?.initialized ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.8125rem' }}
+        >
+          {saving ? '初始化中…' : '初始化项目'}
+        </button>
+      </div>
 
       <div style={{ display: 'flex', gap: '0.75rem' }}>
         <button onClick={() => setStep(3)} style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '8px', padding: '0.6rem', cursor: 'pointer' }}>← 返回</button>
         <button onClick={() => setStep(5)} style={{ flex: 2, backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '8px', padding: '0.6rem', fontWeight: 600, cursor: 'pointer' }}>
-          {initOk || status?.project_initialized ? '下一步 →' : '跳过 →'}
+          {initOk ? '下一步 →' : '跳过 →'}
         </button>
       </div>
     </Card>
