@@ -6,10 +6,11 @@ and stub functions so the Gateway starts without errors.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 router = APIRouter(prefix="/api/swarm", tags=["swarm"])
 
@@ -78,6 +79,63 @@ async def get_member(team: str, agent_id: str) -> dict[str, Any]:
     if member is None:
         raise HTTPException(404, f"Member {agent_id!r} not found in team {team!r}")
     return member.to_dict()
+
+
+_MEMBER_COLOR_PALETTE = ["blue", "green", "yellow", "red", "purple", "cyan"]
+
+
+class AddMemberRequest(BaseModel):
+    name: str
+    prompt: str = ""
+    model: str | None = None
+    color: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_slug(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > 64:
+            raise ValueError("name must be 1-64 characters")
+        if not re.match(r"^[a-zA-Z0-9_\-.]+$", v):
+            raise ValueError("name may only contain letters, digits, hyphens, underscores, and dots")
+        return v
+
+
+@router.post("/teams/{team}/members", status_code=201)
+async def add_member(team: str, req: AddMemberRequest) -> dict[str, Any]:
+    import time as _time
+    from openharness.swarm.team_lifecycle import TeamLifecycleManager, read_team_file, TeamMember
+    tf = read_team_file(team)
+    if tf is None:
+        raise HTTPException(404, f"Team {team!r} not found")
+    color = req.color or _MEMBER_COLOR_PALETTE[len(tf.members) % len(_MEMBER_COLOR_PALETTE)]
+    member = TeamMember(
+        agent_id=f"{req.name}@{team}",
+        name=req.name,
+        backend_type="subprocess",
+        joined_at=_time.time(),
+        prompt=req.prompt or None,
+        model=req.model,
+        color=color,
+    )
+    mgr = TeamLifecycleManager()
+    updated = mgr.add_member(team, member)
+    return updated.members[member.agent_id].to_dict()
+
+
+@router.delete("/teams/{team}/members/{agent_id}", status_code=204)
+async def remove_member(team: str, agent_id: str) -> None:
+    from openharness.swarm.team_lifecycle import TeamLifecycleManager, read_team_file
+    tf = read_team_file(team)
+    if tf is None:
+        raise HTTPException(404, f"Team {team!r} not found")
+    member = tf.members.get(agent_id)
+    if member is None:
+        raise HTTPException(404, f"Member {agent_id!r} not found in team {team!r}")
+    if member.session_id is not None:
+        raise HTTPException(409, "member is running, send shutdown first")
+    mgr = TeamLifecycleManager()
+    mgr.remove_member(team, agent_id)
 
 
 @router.get("/teams/{team}/pending-permissions")

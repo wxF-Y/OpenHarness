@@ -29,6 +29,7 @@ from routers import (
     git,
     memory,
     onboarding,
+    role_library,
     sessions,
     settings,
     skills,
@@ -52,6 +53,7 @@ app.include_router(sessions.router)
 app.include_router(ws.router)
 app.include_router(cron.router)
 app.include_router(swarm.router)
+app.include_router(role_library.router)
 app.include_router(memory.router)
 app.include_router(auth.router)
 app.include_router(settings.router)

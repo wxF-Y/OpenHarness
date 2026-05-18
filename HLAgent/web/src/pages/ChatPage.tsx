@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useSessionStore } from '../stores/sessionStore'
 import { useUiStore } from '../stores/uiStore'
@@ -14,25 +14,40 @@ import ErrorToastContainer from '../components/ErrorToast'
 
 export default function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const store = useSessionStore()
   const ui = useUiStore()
   const { sendRequest } = useWebSocket(sessionId || null)
 
+  const prefill = searchParams.get('prefill') ?? ''
+  const autosubmit = searchParams.get('autosubmit') === '1'
+
+  // For autosubmit: store pending command, fire when WS becomes ready
+  const [pendingAutosubmit, setPendingAutosubmit] = useState<string | null>(
+    autosubmit && prefill ? prefill : null,
+  )
+
   useEffect(() => {
     if (sessionId) {
       const s = useSessionStore.getState()
       if (s.sessionId !== sessionId) {
-        // Different session — full reset
         s.reset()
       } else if (s.wsStatus === 'terminated') {
-        // Same session but was terminated (e.g. navigated away after shutdown).
-        // Reset WS status so the hook can reconnect — preserve transcript.
         s.setWsStatus('disconnected')
       }
       s.setSessionId(sessionId)
     }
   }, [sessionId])
+
+  // Fire autosubmit when WS is ready; clear immediately to prevent re-fire on reconnect
+  useEffect(() => {
+    if (store.wsStatus === 'ready' && pendingAutosubmit) {
+      sendRequest({ type: 'submit_line', line: pendingAutosubmit })
+      store.setBusy(true)
+      setPendingAutosubmit(null)
+    }
+  }, [store.wsStatus, pendingAutosubmit, sendRequest])
 
   if (!sessionId) {
     return (
@@ -62,7 +77,7 @@ export default function ChatPage() {
       {/* Transcript */}
       <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} />
 
-      {/* Input */}
+      {/* Input — pass prefill only when NOT autosubmit */}
       <MessageInput
         busy={store.busy}
         commands={store.commands}
@@ -71,6 +86,7 @@ export default function ChatPage() {
           sendRequest(req)
         }}
         wsStatus={store.wsStatus}
+        initialValue={!autosubmit && prefill ? prefill : undefined}
       />
 
       {/* Status bar */}

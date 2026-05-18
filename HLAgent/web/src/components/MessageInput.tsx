@@ -42,10 +42,11 @@ interface Props {
   commands: string[]
   sendRequest: (req: FrontendRequest) => void
   wsStatus: string
+  initialValue?: string
 }
 
-export default function MessageInput({ busy, commands, sendRequest, wsStatus }: Props) {
-  const [input, setInput] = useState('')
+export default function MessageInput({ busy, commands, sendRequest, wsStatus, initialValue }: Props) {
+  const [input, setInput] = useState(initialValue ?? '')
   const [history, setHistory] = useState<string[]>([])
   const [historyIdx, setHistoryIdx] = useState(-1)
   const [pickerIdx, setPickerIdx] = useState(0)
