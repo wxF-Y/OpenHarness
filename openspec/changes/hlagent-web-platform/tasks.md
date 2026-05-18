@@ -482,7 +482,7 @@
 
 ### P3 — 低优先级：权限规则编辑 UI（可选，后续迭代）
 
-- [ ] 15.5 新增 `pages/PermissionsPage.tsx`（路由 `/permissions-settings`）
+- [x] 15.5 新增 `pages/PermissionsPage.tsx`（路由 `/permissions-settings`）
   - 工具白名单（allowed_tools）：列表 + 添加/删除
   - 工具黑名单（denied_tools）：列表 + 添加/删除
   - 路径规则（path_rules）：glob 模式 + allow/deny 标签 + 添加/删除
@@ -490,7 +490,7 @@
   - 保存调用 `PATCH /api/settings` 对应字段
   - 在 Sidebar 导航新增"🔐 权限规则"入口
 
-- [ ] 15.6 升级集成验证：
+- [x] 15.6 升级集成验证：
   - 验证 StatusBar 徽章可见：default/plan/full_auto 三种状态均正确显示；无活跃会话时不显示
   - 验证 StatusBar 点击 → SelectModal → 切换成功 → 徽章颜色随即更新（来自 state_snapshot）
   - 验证 PermissionModal "本次全部允许"：弹窗关闭 + 黄色警告 Toast（非红色）+ 后续工具不再弹窗

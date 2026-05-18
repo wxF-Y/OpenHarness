@@ -10,6 +10,7 @@ const SwarmPage = lazy(() => import('./pages/SwarmPage'))
 const MemoryPage = lazy(() => import('./pages/MemoryPage'))
 const SkillsPage = lazy(() => import('./pages/SkillsPage'))
 const AutopilotPage = lazy(() => import('./pages/AutopilotPage'))
+const PermissionsPage = lazy(() => import('./pages/PermissionsPage'))
 
 function LoadingFallback() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/autopilot" element={<AutopilotPage />} />
+            <Route path="/permissions-settings" element={<PermissionsPage />} />
           </Routes>
         </OnboardingGuard>
       </Suspense>

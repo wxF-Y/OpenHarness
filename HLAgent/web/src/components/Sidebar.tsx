@@ -137,6 +137,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
               ['🧠 Memory', '/memory'],
               ['⚡ Skills', '/skills'],
               ['🚀 Autopilot', '/autopilot'],
+              ['🔐 权限规则', '/permissions-settings'],
             ].map(([label, path]) => (
               <button
                 key={path}
