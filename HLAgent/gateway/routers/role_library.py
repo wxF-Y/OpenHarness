@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
-import time
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/swarm/role-library", tags=["role-library"])
 
@@ -145,12 +145,55 @@ _CONTENT_SOURCES = [
     "https://raw.githubusercontent.com/jnMetaCode/agency-agents-zh/main",
 ]
 
+# ---------------------------------------------------------------------------
+# Pydantic response models
+# ---------------------------------------------------------------------------
+
+
+class RoleAgentOut(BaseModel):
+    name: str
+    path: str
+    description: str
+
+
+class RoleDepartmentOut(BaseModel):
+    id: str
+    label: str
+    agents: list[RoleAgentOut]
+
+
+class CatalogOut(BaseModel):
+    departments: list[RoleDepartmentOut]
+
 
 # ---------------------------------------------------------------------------
-# L1 in-memory cache (wraps sync disk read)
+# L1 in-memory cache — per-path dict supporting individual entry eviction
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=50)
+_l1_cache: dict[str, str] = {}
+_l1_lock = asyncio.Lock()
+
+
+async def _l1_get(path: str) -> str | None:
+    async with _l1_lock:
+        return _l1_cache.get(path)
+
+
+async def _l1_set(path: str, content: str) -> None:
+    async with _l1_lock:
+        _l1_cache[path] = content
+
+
+async def _l1_clear() -> None:
+    async with _l1_lock:
+        _l1_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# L2 disk cache helpers (synchronous — always call via asyncio.to_thread)
+# ---------------------------------------------------------------------------
+
+
 def _read_from_disk(path: str) -> str | None:
     cache_file = _CACHE_ROOT / path
     if cache_file.exists():
@@ -160,7 +203,6 @@ def _read_from_disk(path: str) -> str | None:
 
 def _write_to_disk(path: str, content: str) -> None:
     cache_file = _CACHE_ROOT / path
-    # Resolve and validate: raises ValueError if resolved path escapes cache root
     resolved = cache_file.resolve()
     cache_root_resolved = _CACHE_ROOT.resolve()
     try:
@@ -172,32 +214,21 @@ def _write_to_disk(path: str, content: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# Internal: fetch content with L1 → L2 → CDN fallback chain
 # ---------------------------------------------------------------------------
 
-@router.get("/catalog")
-async def get_catalog() -> dict[str, Any]:
-    """Return the static role catalog. Never requires network access."""
-    return {"departments": AGENT_CATALOG}
 
-
-@router.get("/content")
-async def get_content(path: str = Query(...)) -> Response:
-    """Fetch role Markdown content. L1 LRU → L2 disk → CDN sources (fallback chain)."""
-    # Whitelist validation
-    if path not in _VALID_PATHS:
-        raise HTTPException(status_code=400, detail=f"Unknown role path: {path!r}")
-
-    # L1 / L2 cache check
-    cached = _read_from_disk(path)
+async def _fetch_content(path: str) -> str:
+    """L1 dict → L2 disk → CDN sources. Raises HTTPException(503) on total failure."""
+    cached = await _l1_get(path)
     if cached is not None:
-        return Response(
-            content=cached,
-            media_type="text/markdown",
-            headers={"X-Cache": "HIT"},
-        )
+        return cached
 
-    # Try each content source in order
+    disk_content = await asyncio.to_thread(_read_from_disk, path)
+    if disk_content is not None:
+        await _l1_set(path, disk_content)
+        return disk_content
+
     proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     client_kwargs: dict[str, Any] = {"timeout": 10.0}
     if proxy_url:
@@ -211,13 +242,9 @@ async def get_content(path: str = Query(...)) -> Response:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     content = resp.text
-                    _write_to_disk(path, content)
-                    _read_from_disk.cache_clear()
-                    return Response(
-                        content=content,
-                        media_type="text/markdown",
-                        headers={"X-Cache": "MISS"},
-                    )
+                    await asyncio.to_thread(_write_to_disk, path, content)
+                    await _l1_set(path, content)
+                    return content
                 last_error = f"upstream_error:{resp.status_code}"
             except httpx.TimeoutException:
                 last_error = f"timeout:{base_url}"
@@ -232,6 +259,48 @@ async def get_content(path: str = Query(...)) -> Response:
     )
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/catalog")
+async def get_catalog() -> Response:
+    """Return the static role catalog with 1-hour cache hint."""
+    data = CatalogOut(
+        departments=[
+            RoleDepartmentOut(
+                id=dept["id"],
+                label=dept["label"],
+                agents=[RoleAgentOut(**a) for a in dept["agents"]],
+            )
+            for dept in AGENT_CATALOG
+        ]
+    )
+    return Response(
+        content=data.model_dump_json(),
+        media_type="application/json",
+        headers={"Cache-Control": "max-age=3600, immutable"},
+    )
+
+
+@router.get("/content")
+async def get_content(path: str = Query(...)) -> Response:
+    """Fetch role Markdown content. L1 dict → L2 disk → CDN sources (fallback chain)."""
+    if path not in _VALID_PATHS:
+        raise HTTPException(status_code=400, detail=f"Unknown role path: {path!r}")
+
+    cached_before = await _l1_get(path)
+    content = await _fetch_content(path)
+    cache_status = "HIT" if cached_before is not None else "MISS"
+
+    return Response(
+        content=content,
+        media_type="text/markdown",
+        headers={"X-Cache": cache_status},
+    )
+
+
 @router.delete("/cache")
 async def clear_cache() -> dict[str, Any]:
     """Clear all disk-cached role content and invalidate L1 cache."""
@@ -239,7 +308,7 @@ async def clear_cache() -> dict[str, Any]:
     if _CACHE_ROOT.exists():
         for f in _CACHE_ROOT.rglob("*"):
             if f.is_file():
-                f.unlink()
+                await asyncio.to_thread(f.unlink)
                 cleared += 1
-    _read_from_disk.cache_clear()
+    await _l1_clear()
     return {"cleared_files": cleared}

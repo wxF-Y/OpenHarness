@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MDRenderer from './MDRenderer'
 import type { RoleCatalog, RoleDepartment, RoleAgent, SelectedRole } from '../types/swarm'
-import { fetchCatalog, fetchRoleContent } from '../utils/swarmApi'
+import { fetchCatalog, fetchRoleContent, startExpertChat } from '../utils/swarmApi'
 
 interface Props {
   mode: 'wizard' | 'picker'
@@ -80,14 +80,7 @@ export default function RoleLibraryPanel({ mode, selectedRoles, onToggle, onConf
     if (!previewRole || !previewContent) return
     setExpertChatBusy(true)
     try {
-      const intro = `请你扮演以下专家角色，所有回复都以该角色的视角和知识体系来回答：\n\n${previewContent.slice(0, 3000)}`
-      const r = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      const { session_id } = await r.json()
-      navigate(`/chat/${session_id}?prefill=${encodeURIComponent(intro)}&autosubmit=1`)
+      await startExpertChat(previewContent, navigate, '/swarm')
     } catch {
       setExpertChatBusy(false)
     }

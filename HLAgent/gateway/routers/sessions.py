@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from hlagent_sdk import AgentSessionConfig
 from services.session_manager import session_mgr
@@ -23,6 +23,7 @@ class CreateSessionRequest(BaseModel):
     api_key: str | None = None
     api_format: str | None = None
     active_profile: str | None = None
+    role_prefix: str | None = Field(None, max_length=5000)
 
 
 @router.get("")
@@ -90,12 +91,14 @@ Carefully consider the reversibility and blast radius of actions. Freely take lo
 
 @router.post("", status_code=201)
 async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
+    base_sp = req.system_prompt if req.system_prompt is not None else _HLAGENT_SYSTEM_PROMPT
+    # role_prefix appended after the base system prompt so it cannot override safety instructions
+    full_sp = f"{base_sp}\n\n# Role Definition\n{req.role_prefix.strip()}" if req.role_prefix else base_sp
     config = AgentSessionConfig(
         model=req.model,
         cwd=req.cwd,
         permission_mode=req.permission_mode,
-        # Use HLAgent system prompt unless caller explicitly provides one
-        system_prompt=req.system_prompt if req.system_prompt is not None else _HLAGENT_SYSTEM_PROMPT,
+        system_prompt=full_sp,
         max_turns=req.max_turns,
         api_key=req.api_key,
         api_format=req.api_format,

@@ -23,6 +23,11 @@ export default function ChatPage() {
   const prefill = searchParams.get('prefill') ?? ''
   const autosubmit = searchParams.get('autosubmit') === '1'
 
+  const ALLOWED_BACK_PATHS = ['/', '/experts', '/swarm'] as const
+  const rawFrom = searchParams.get('from') ?? '/'
+  const fromPath = (ALLOWED_BACK_PATHS as readonly string[]).includes(rawFrom) ? rawFrom : '/'
+  const backLabel = fromPath === '/experts' ? '← 专家库' : fromPath === '/swarm' ? '← Swarm' : '← 首页'
+
   // For autosubmit: store pending command, fire when WS becomes ready
   const [pendingAutosubmit, setPendingAutosubmit] = useState<string | null>(
     autosubmit && prefill ? prefill : null,
@@ -61,7 +66,7 @@ export default function ChatPage() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#1e1e2e' }}>
       {/* Top bar */}
       <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
-        <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '0.875rem' }}>← 首页</button>
+        <button onClick={() => navigate(fromPath)} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '0.875rem' }}>{backLabel}</button>
         <span style={{ color: '#45475a' }}>|</span>
         <span style={{ fontSize: '0.8125rem', color: '#a6adc8' }}>
           {store.appState?.model || 'HLAgent'} · {sessionId.slice(0, 8)}

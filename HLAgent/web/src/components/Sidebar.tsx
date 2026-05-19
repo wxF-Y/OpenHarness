@@ -49,6 +49,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="首页">🏠</button>
         <button onClick={() => navigate('/cron')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="Cron">⏰</button>
         <button onClick={() => navigate('/swarm')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="Swarm">🤝</button>
+        <button onClick={() => navigate('/experts')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="专家库">🎭</button>
         <button onClick={() => navigate('/memory')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="Memory">🧠</button>
         <button onClick={() => navigate('/skills')} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }} title="Skills">⚡</button>
       </div>
@@ -134,6 +135,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
             {[
               ['⏰ Cron', '/cron'],
               ['🤝 Swarm', '/swarm'],
+              ['🎭 专家库', '/experts'],
               ['🧠 Memory', '/memory'],
               ['⚡ Skills', '/skills'],
               ['🚀 Autopilot', '/autopilot'],

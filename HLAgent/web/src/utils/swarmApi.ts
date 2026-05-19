@@ -13,6 +13,32 @@ export async function fetchRoleContent(path: string): Promise<string> {
   return r.text()
 }
 
+/** Max characters from role Markdown to inject as system_prompt prefix. */
+const ROLE_PREFIX_MAX_CHARS = 3000
+
+/**
+ * Create a session with the expert role definition as system_prompt prefix,
+ * then navigate to the chat page. The role is injected server-side so it
+ * persists across the whole conversation rather than appearing as the first
+ * user message.
+ */
+export async function startExpertChat(
+  roleContent: string,
+  navigate: NavigateFunction,
+  fromPath: string = '/experts',
+): Promise<void> {
+  const rolePrefix = roleContent.slice(0, ROLE_PREFIX_MAX_CHARS)
+  const r = await fetch('/api/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role_prefix: rolePrefix }),
+  })
+  if (!r.ok) throw new Error(`创建 session 失败: ${r.status}`)
+  const body = await r.json()
+  if (!body?.session_id) throw new Error('服务器返回了无效的 session')
+  navigate(`/chat/${body.session_id}?from=${encodeURIComponent(fromPath)}`)
+}
+
 export async function launchTeam(
   teamName: string,
   taskDesc: string,
@@ -25,9 +51,8 @@ export async function launchTeam(
   })
   if (!r.ok) throw new Error(`Failed to create session: ${r.status}`)
   const { session_id } = await r.json()
-  // Sanitize: team name must be slug-safe; strip newlines from task description
   const safeTeam = teamName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '')
   const safeTask = taskDesc.trim().replace(/[\r\n]+/g, ' ')
   const cmd = safeTask ? `/swarm start ${safeTeam} ${safeTask}` : `/swarm start ${safeTeam}`
-  navigate(`/chat/${session_id}?prefill=${encodeURIComponent(cmd)}&autosubmit=1`)
+  navigate(`/chat/${session_id}?prefill=${encodeURIComponent(cmd)}&autosubmit=1&from=${encodeURIComponent('/swarm')}`)
 }

@@ -11,6 +11,7 @@ const MemoryPage = lazy(() => import('./pages/MemoryPage'))
 const SkillsPage = lazy(() => import('./pages/SkillsPage'))
 const AutopilotPage = lazy(() => import('./pages/AutopilotPage'))
 const PermissionsPage = lazy(() => import('./pages/PermissionsPage'))
+const ExpertsPage = lazy(() => import('./pages/ExpertsPage'))
 
 function LoadingFallback() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/autopilot" element={<AutopilotPage />} />
             <Route path="/permissions-settings" element={<PermissionsPage />} />
+            <Route path="/experts" element={<ExpertsPage />} />
           </Routes>
         </OnboardingGuard>
       </Suspense>

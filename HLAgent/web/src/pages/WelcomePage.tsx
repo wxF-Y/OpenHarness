@@ -99,7 +99,7 @@ export default function WelcomePage() {
       </div>
 
       <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.875rem' }}>
-        {[['Cron', '/cron'], ['Swarm', '/swarm'], ['Memory', '/memory'], ['Skills', '/skills'], ['权限规则', '/permissions-settings']].map(([l, p]) => (
+        {[['Cron', '/cron'], ['Swarm', '/swarm'], ['专家库', '/experts'], ['Memory', '/memory'], ['Skills', '/skills'], ['权限规则', '/permissions-settings']].map(([l, p]) => (
           <button key={l} onClick={() => navigate(p)} style={{ background: 'none', border: 'none', color: '#89b4fa', cursor: 'pointer' }}>{l}</button>
         ))}
       </div>
