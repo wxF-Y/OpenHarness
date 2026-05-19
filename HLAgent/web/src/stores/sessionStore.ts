@@ -30,6 +30,7 @@ interface SessionState {
   setPlanMode: (mode: string) => void
   setTerminated: () => void
   reset: () => void
+  resetAndSetSession: (id: string) => void
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -68,6 +69,19 @@ export const useSessionStore = create<SessionState>((set) => ({
   setTerminated: () => set({ wsStatus: 'terminated', busy: false }),
   reset: () =>
     set({
+      transcript: [],
+      assistantBuffer: '',
+      commands: [],
+      mcpServers: [],
+      bridgeSessions: [],
+      busy: false,
+      planMode: 'default',
+      appState: null,
+    }),
+  resetAndSetSession: (id) =>
+    set({
+      sessionId: id,
+      wsStatus: 'disconnected',
       transcript: [],
       assistantBuffer: '',
       commands: [],

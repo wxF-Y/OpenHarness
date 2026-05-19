@@ -110,7 +110,7 @@ export default function ExpertsPage() {
   const totalMatches = trimmedSearch ? filteredDepts.reduce((s, d) => s + d.matchCount, 0) : null
 
   return (
-    <div style={{ height: '100vh', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
         <span style={{ color: '#cba6f7', fontWeight: 700, fontSize: '0.9375rem' }}>🎭 专家库</span>

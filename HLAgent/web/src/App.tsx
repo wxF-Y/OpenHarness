@@ -1,17 +1,9 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
 import OnboardingGuard from './components/OnboardingGuard'
+import AppLayout from './components/AppLayout'
 
-const WelcomePage = lazy(() => import('./pages/WelcomePage'))
-const ChatPage = lazy(() => import('./pages/ChatPage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
-const CronPage = lazy(() => import('./pages/CronPage'))
-const SwarmPage = lazy(() => import('./pages/SwarmPage'))
-const MemoryPage = lazy(() => import('./pages/MemoryPage'))
-const SkillsPage = lazy(() => import('./pages/SkillsPage'))
-const AutopilotPage = lazy(() => import('./pages/AutopilotPage'))
-const PermissionsPage = lazy(() => import('./pages/PermissionsPage'))
-const ExpertsPage = lazy(() => import('./pages/ExpertsPage'))
 
 function LoadingFallback() {
   return (
@@ -27,20 +19,20 @@ export default function App() {
       <Suspense fallback={<LoadingFallback />}>
         <OnboardingGuard>
           <Routes>
-            <Route path="/" element={<WelcomePage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route path="/chat/:sessionId" element={<ChatPage />} />
-            <Route path="/cron" element={<CronPage />} />
-            <Route path="/swarm" element={<SwarmPage />} />
-            <Route path="/memory" element={<MemoryPage />} />
-            <Route path="/skills" element={<SkillsPage />} />
-            <Route path="/autopilot" element={<AutopilotPage />} />
-            <Route path="/permissions-settings" element={<PermissionsPage />} />
-            <Route path="/experts" element={<ExpertsPage />} />
+            <Route path="/" element={<AppLayout />} />
+            <Route path="/chat/:sessionId" element={<AppLayout />} />
+            {/* Legacy routes — redirect into AppLayout with view param */}
+            <Route path="/memory" element={<Navigate to="/?view=memory" replace />} />
+            <Route path="/skills" element={<Navigate to="/?view=skills" replace />} />
+            <Route path="/cron" element={<Navigate to="/?view=cron" replace />} />
+            <Route path="/swarm" element={<Navigate to="/?view=swarm" replace />} />
+            <Route path="/experts" element={<Navigate to="/?view=experts" replace />} />
+            <Route path="/autopilot" element={<Navigate to="/?view=autopilot" replace />} />
+            <Route path="/permissions-settings" element={<Navigate to="/?view=permissions" replace />} />
           </Routes>
         </OnboardingGuard>
       </Suspense>
     </BrowserRouter>
   )
 }
-

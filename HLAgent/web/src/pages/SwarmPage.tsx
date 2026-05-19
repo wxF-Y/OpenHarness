@@ -217,12 +217,9 @@ export default function SwarmPage() {
   }
 
   const memberList = Object.values(members)
-  const leadAgentId = (teams.find((t) => t.name === selectedTeam))
-    ? memberList.find((m) => m.agent_id.startsWith('lead@') || m.agent_id === teams.find((t) => t.name === selectedTeam)?.lead_agent_id)?.agent_id
-    : undefined
 
   return (
-    <div style={{ height: '100vh', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
         <span style={{ color: '#89dceb', fontWeight: 700 }}>🤝 Swarm Teams</span>
       </div>

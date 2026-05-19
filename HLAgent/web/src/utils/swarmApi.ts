@@ -1,5 +1,6 @@
 import type { NavigateFunction } from 'react-router-dom'
 import type { RoleCatalog } from '../types/swarm'
+import { useUiStore } from '../stores/uiStore'
 
 export async function fetchCatalog(): Promise<RoleCatalog> {
   const r = await fetch('/api/swarm/role-library/catalog')
@@ -15,6 +16,8 @@ export async function fetchRoleContent(path: string): Promise<string> {
 
 /** Max characters from role Markdown to inject as system_prompt prefix. */
 const ROLE_PREFIX_MAX_CHARS = 3000
+/** Gateway hard limit for role_prefix field. */
+const ROLE_PREFIX_SERVER_LIMIT = 5000
 
 /**
  * Create a session with the expert role definition as system_prompt prefix,
@@ -27,6 +30,13 @@ export async function startExpertChat(
   navigate: NavigateFunction,
   fromPath: string = '/experts',
 ): Promise<void> {
+  if (roleContent.length > ROLE_PREFIX_SERVER_LIMIT) {
+    useUiStore.getState().addErrorToast(
+      `角色定义超过 ${ROLE_PREFIX_SERVER_LIMIT} 字限制（当前 ${roleContent.length} 字），请精简后重试`,
+      'warning',
+    )
+    return
+  }
   const rolePrefix = roleContent.slice(0, ROLE_PREFIX_MAX_CHARS)
   const r = await fetch('/api/sessions', {
     method: 'POST',

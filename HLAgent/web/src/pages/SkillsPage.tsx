@@ -31,7 +31,7 @@ export default function SkillsPage() {
   const filtered = skills.filter((s) => s.name.includes(filter) || s.description.toLowerCase().includes(filter.toLowerCase()))
 
   return (
-    <div style={{ height: '100vh', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
         <span style={{ color: '#89b4fa', fontWeight: 700 }}>⚡ Skills</span>
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="过滤…" style={{ backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.3rem 0.6rem', color: '#cdd6f4', fontSize: '0.8125rem', width: '180px' }} />

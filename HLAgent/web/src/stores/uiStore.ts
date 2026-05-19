@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { ModalData, SelectOption } from '../types/protocol'
 
+export type AppView = 'chat' | 'memory' | 'skills' | 'experts' | 'cron' | 'swarm' | 'autopilot' | 'permissions'
+
 export interface SelectModalState {
   kind: 'select'
   title: string
@@ -24,16 +26,22 @@ interface UiState {
   activeModal: ActiveModal
   compactPhase: string | null
   errorToasts: ErrorToast[]
+  activeView: AppView
+  activeChatSessionId: string | null
   setActiveModal: (modal: ActiveModal) => void
   setCompactPhase: (phase: string | null) => void
   addErrorToast: (message: string, type?: 'error' | 'warning' | 'info') => void
   removeErrorToast: (id: string) => void
+  setActiveView: (view: AppView) => void
+  setActiveChatSessionId: (id: string | null) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
   activeModal: null,
   compactPhase: null,
   errorToasts: [],
+  activeView: 'chat',
+  activeChatSessionId: null,
 
   setActiveModal: (activeModal) => set({ activeModal }),
   setCompactPhase: (compactPhase) => set({ compactPhase }),
@@ -46,5 +54,6 @@ export const useUiStore = create<UiState>((set) => ({
     })),
   removeErrorToast: (id) =>
     set((prev) => ({ errorToasts: prev.errorToasts.filter((t) => t.id !== id) })),
+  setActiveView: (activeView) => set({ activeView }),
+  setActiveChatSessionId: (activeChatSessionId) => set({ activeChatSessionId }),
 }))
-

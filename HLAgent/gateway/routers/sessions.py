@@ -14,6 +14,15 @@ from services.session_manager import session_mgr
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    model: str
+    cwd: str
+    ready: bool
+    created_at: float
+    title: str = ""
+
+
 class CreateSessionRequest(BaseModel):
     model: str | None = None
     cwd: str | None = None
@@ -27,7 +36,7 @@ class CreateSessionRequest(BaseModel):
 
 
 @router.get("")
-async def list_sessions() -> list[dict[str, Any]]:
+async def list_sessions() -> list[SessionSummary]:
     """List active sessions from session_mgr (in-memory only).
 
     NOTE: Only returns sessions active in current Gateway process.
@@ -37,16 +46,35 @@ async def list_sessions() -> list[dict[str, Any]]:
     """
     results = []
     for session_id in session_mgr.list_ids():
-        host = session_mgr.get(session_id)
-        if host is None:
+        entry = session_mgr.get_entry(session_id)
+        if entry is None:
             continue
-        state = host.app_state if host.is_ready else None
-        results.append({
-            "session_id": session_id,
-            "model": state.model if state else "",
-            "cwd": state.cwd if state else "",
-            "ready": host.is_ready,
-        })
+        state = entry.host.app_state if entry.host.is_ready else None
+        title = ""
+        if entry.host.is_ready:
+            for msg in entry.host.get_messages():
+                if getattr(msg, "role", None) == "user":
+                    content = getattr(msg, "content", "")
+                    if isinstance(content, list):
+                        # Extract text from content blocks
+                        text = " ".join(
+                            b.get("text", "") if isinstance(b, dict) else getattr(b, "text", "")
+                            for b in content
+                            if (isinstance(b, dict) and b.get("type") == "text")
+                            or (not isinstance(b, dict) and getattr(b, "type", "") == "text")
+                        )
+                    else:
+                        text = str(content)
+                    title = text.strip()[:40]
+                    break
+        results.append(SessionSummary(
+            session_id=session_id,
+            model=state.model if state else (entry.model or ""),
+            cwd=state.cwd if state else (entry.cwd or ""),
+            ready=entry.host.is_ready,
+            created_at=entry.created_at,
+            title=title,
+        ))
     # Most recent sessions first
     return list(reversed(results))
 
@@ -90,7 +118,7 @@ Carefully consider the reversibility and blast radius of actions. Freely take lo
 
 
 @router.post("", status_code=201)
-async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
+async def create_session(req: CreateSessionRequest) -> SessionSummary:
     base_sp = req.system_prompt if req.system_prompt is not None else _HLAGENT_SYSTEM_PROMPT
     # role_prefix appended after the base system prompt so it cannot override safety instructions
     full_sp = f"{base_sp}\n\n# Role Definition\n{req.role_prefix.strip()}" if req.role_prefix else base_sp
@@ -105,7 +133,14 @@ async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
         active_profile=req.active_profile,
     )
     session_id, _ = session_mgr.create(config)
-    return {"session_id": session_id, "status": "created"}
+    entry = session_mgr.get_entry(session_id)
+    return SessionSummary(
+        session_id=session_id,
+        model=req.model or "",
+        cwd=req.cwd or "",
+        ready=False,
+        created_at=entry.created_at if entry else 0.0,
+    )
 
 
 @router.get("/{session_id}")
