@@ -1,7 +1,7 @@
 """Persistent team lifecycle management for OpenHarness swarms.
 
 Teams are stored as JSON files on disk:
-    ~/.openharness/teams/<name>/team.json
+    <config_dir>/teams/<name>/team.json
 
 This module provides TeamMember, TeamFile, AllowedPath, TeamLifecycleManager
 and a full set of CRUD helpers matching the TS teamHelpers.ts API.
@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from openharness.config.paths import get_config_dir
 from openharness.swarm.mailbox import get_team_dir
 from openharness.swarm.types import BackendType
 
@@ -264,7 +265,7 @@ class TeamFile:
         """Atomically write this team file to *path*."""
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)  # replace() handles existing destination on Windows (unlike rename())
 
     @classmethod
@@ -780,7 +781,7 @@ async def cleanup_team_directories(team_name: str) -> None:
 class TeamLifecycleManager:
     """Manage the on-disk lifecycle of swarm teams.
 
-    Persists team metadata to ``~/.openharness/teams/<name>/team.json``.
+    Persists team metadata to ``<config_dir>/teams/<name>/team.json``.
     Integrates with the mailbox system's directory layout — the team
     directory created here is the same one that :class:`TeammateMailbox`
     uses, so agents can be added and messaged without separate setup.
@@ -834,8 +835,8 @@ class TeamLifecycleManager:
             return None
 
     def list_teams(self) -> list[TeamFile]:
-        """Return all teams found in ``~/.openharness/teams/``, sorted by name."""
-        base = Path.home() / ".openharness" / "teams"
+        """Return all teams found in ``<config_dir>/teams/``, sorted by name."""
+        base = get_config_dir() / "teams"
         if not base.exists():
             return []
 

@@ -1,7 +1,7 @@
 """File-based async message queue for leader-worker communication in OpenHarness swarms.
 
 Each message is stored as an individual JSON file:
-    ~/.openharness/teams/<team>/agents/<agent_id>/inbox/<timestamp>_<message_id>.json
+    <config_dir>/teams/<team>/agents/<agent_id>/inbox/<timestamp>_<message_id>.json
 
 Atomic writes use a .tmp file followed by os.rename to prevent partial reads.
 """
@@ -11,13 +11,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from openharness.config.paths import get_config_dir
 from openharness.swarm.lockfile import exclusive_file_lock
+
+# Only allow slug-safe names: letters, digits, hyphens, underscores, dots (1-64 chars)
+_SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-.]{1,64}$')
+# agent_id is "name@team" — same charset plus exactly one @
+_SAFE_AGENT_ID_RE = re.compile(r'^[a-zA-Z0-9_\-.]{1,32}@[a-zA-Z0-9_\-.]{1,32}$')
 
 
 # ---------------------------------------------------------------------------
@@ -81,14 +88,18 @@ class MailboxMessage:
 
 
 def get_team_dir(team_name: str) -> Path:
-    """Return ~/.openharness/teams/<team_name>/"""
-    base = Path.home() / ".openharness" / "teams" / team_name
+    """Return <config_dir>/teams/<team_name>/"""
+    if not _SAFE_NAME_RE.match(team_name):
+        raise ValueError(f"Invalid team name {team_name!r}: only letters, digits, hyphens, underscores, and dots (1-64 chars) are allowed")
+    base = get_config_dir() / "teams" / team_name
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
 def get_agent_mailbox_dir(team_name: str, agent_id: str) -> Path:
-    """Return ~/.openharness/teams/<team_name>/agents/<agent_id>/inbox/"""
+    """Return <config_dir>/teams/<team_name>/agents/<agent_id>/inbox/"""
+    if not _SAFE_AGENT_ID_RE.match(agent_id):
+        raise ValueError(f"Invalid agent_id {agent_id!r}: expected 'name@team' with slug-safe characters")
     inbox = get_team_dir(team_name) / "agents" / agent_id / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
     return inbox
@@ -139,7 +150,7 @@ class TeammateMailbox:
         tmp_path = inbox / f"{filename}.tmp"
         lock_path = inbox / ".write_lock"
 
-        payload = json.dumps(msg.to_dict(), indent=2)
+        payload = json.dumps(msg.to_dict(), indent=2, ensure_ascii=False)
 
         def _write_atomic() -> None:
             with exclusive_file_lock(lock_path):
@@ -199,7 +210,7 @@ class TeammateMailbox:
                     if data.get("id") == message_id:
                         data["read"] = True
                         tmp_path = path.with_suffix(".json.tmp")
-                        tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                        tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
                         os.replace(tmp_path, path)
                         return True
                 return False
