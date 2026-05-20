@@ -24,6 +24,7 @@ from openharness.config.paths import get_data_dir, get_logs_dir
 from openharness.services.cron import (
     load_cron_jobs,
     mark_job_run,
+    upsert_cron_job,
     validate_cron_expression,
 )
 from openharness.sandbox import SandboxUnavailableError
@@ -42,6 +43,32 @@ logger = logging.getLogger(__name__)
 TICK_INTERVAL_SECONDS = 30
 """How often the scheduler checks for due jobs."""
 
+# ---------------------------------------------------------------------------
+# In-process agent runner (injected by HLAgent gateway on startup)
+# ---------------------------------------------------------------------------
+
+# Callable[[dict], Awaitable[tuple[bool, str]]]  (job → (success, output))
+_agent_runner = None
+# asyncio.Task tracking the in-process scheduler loop (set by gateway startup)
+_scheduler_task: asyncio.Task | None = None
+# Names of cron jobs currently executing (updated by the scheduler loop)
+_running_job_names: set[str] = set()
+
+
+def get_running_job_names() -> set[str]:
+    """Return the set of job names currently being executed."""
+    return set(_running_job_names)
+
+
+def set_agent_runner(runner) -> None:
+    """Inject a gateway-provided agent runner for ``agent_turn`` cron jobs.
+
+    When set, ``execute_job`` calls this instead of spawning an ``ohmo``
+    subprocess.  Must be called before the scheduler loop starts.
+    """
+    global _agent_runner
+    _agent_runner = runner
+
 
 # ---------------------------------------------------------------------------
 # History helpers
@@ -58,6 +85,31 @@ def append_history(entry: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry) + "\n")
+
+
+def delete_job_history(job_name: str) -> int:
+    """Remove all history entries for *job_name*.  Returns the number of entries removed."""
+    path = get_history_path()
+    if not path.exists():
+        return 0
+    lines = path.read_text(encoding="utf-8").splitlines()
+    kept, removed = [], 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            kept.append(line)
+            continue
+        if entry.get("name") == job_name:
+            removed += 1
+        else:
+            kept.append(line)
+    if removed:
+        path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    return removed
 
 
 def load_history(*, limit: int = 50, job_name: str | None = None) -> list[dict[str, Any]]:
@@ -89,6 +141,25 @@ def get_pid_path() -> Path:
     return get_data_dir() / "cron_scheduler.pid"
 
 
+def _pid_alive(pid: int) -> bool:
+    """Return True if a process with *pid* is currently running."""
+    # psutil is the most reliable cross-platform check
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except ImportError:
+        pass
+
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as exc:
+        import errno as _errno
+        if exc.errno == _errno.EPERM:
+            return True  # process exists but we lack permission to signal
+        return False
+
+
 def read_pid() -> int | None:
     """Read the PID of a running scheduler, or None."""
     path = get_pid_path()
@@ -98,10 +169,7 @@ def read_pid() -> int | None:
         pid = int(path.read_text(encoding="utf-8").strip())
     except (ValueError, OSError):
         return None
-    # Check if process is alive
-    try:
-        os.kill(pid, 0)
-    except OSError:
+    if not _pid_alive(pid):
         logger.debug("Removed stale scheduler PID file (pid=%d)", pid)
         path.unlink(missing_ok=True)
         return None
@@ -121,7 +189,9 @@ def remove_pid() -> None:
 
 
 def is_scheduler_running() -> bool:
-    """Return True if a scheduler process is alive."""
+    """Return True if the scheduler is alive (in-process task OR external PID)."""
+    if _scheduler_task is not None and not _scheduler_task.done():
+        return True
     return read_pid() is not None
 
 
@@ -244,8 +314,69 @@ def _command_for_job(job: dict[str, Any]) -> str:
 async def execute_job(job: dict[str, Any]) -> dict[str, Any]:
     """Run a single cron job and return a history entry."""
     name = job["name"]
-    cwd = Path(job.get("cwd") or ".").expanduser()
     started_at = datetime.now(timezone.utc)
+
+    payload = job.get("payload") or {}
+    is_agent_turn = isinstance(payload, dict) and payload.get("kind", "agent_turn") == "agent_turn"
+
+    # ── In-process path: agent_turn via injected WebBackendHost runner ──────
+    if is_agent_turn and _agent_runner is not None:
+        msg_preview = str(payload.get("message") or "")[:120]
+        logger.info("Executing cron job %r: [agent_turn] %s", name, msg_preview)
+
+        # Snapshot cron registry before execution to detect side-effects
+        jobs_before: set[str] = {j["name"] for j in load_cron_jobs()}
+
+        try:
+            success, output = await _agent_runner(job)
+        except Exception as exc:
+            success, output = False, str(exc)
+
+        # Detect cron changes made by the agent during this turn
+        jobs_after = load_cron_jobs()
+        jobs_after_names: set[str] = {j["name"] for j in jobs_after}
+        created_names = sorted(jobs_after_names - jobs_before)
+        deleted_names = sorted(jobs_before - jobs_after_names)
+
+        cron_side_effects: list[dict[str, Any]] = []
+        if created_names or deleted_names:
+            for n in created_names:
+                cron_side_effects.append({"action": "created", "job": n})
+                logger.warning("Cron job %r created a new cron job %r during execution", name, n)
+            for n in deleted_names:
+                cron_side_effects.append({"action": "deleted", "job": n})
+                logger.warning("Cron job %r deleted cron job %r during execution", name, n)
+
+        entry: dict[str, Any] = {
+            "name": name,
+            "command": f"[agent_turn] {msg_preview}",
+            "started_at": started_at.isoformat(),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "returncode": 0 if success else 1,
+            "status": "success" if success else "failed",
+            "stdout": output,
+            "stderr": "",
+        }
+        if cron_side_effects:
+            entry["cron_side_effects"] = cron_side_effects
+
+        # Tag newly created jobs with created_by — use targeted upsert instead of
+        # wholesale save_cron_jobs to avoid overwriting interleaved writes
+        if created_names:
+            from openharness.services.cron import get_cron_job
+            for created_name in created_names:
+                j = get_cron_job(created_name)
+                if j and "created_by" not in j:
+                    upsert_cron_job({**j, "created_by": f"cron:{name}"})
+
+        mark_job_run(name, success=success)
+        await _notify_job_result(job, entry)
+        append_history(entry)
+        logger.info("Job %r finished: %s", name, entry["status"])
+        return entry
+
+    # ── Subprocess path: shell command (or ohmo fallback) ───────────────────
+    cwd = Path(job.get("cwd") or ".").expanduser()
     try:
         command = _command_for_job(job)
     except Exception as exc:
@@ -372,8 +503,16 @@ def _jobs_due(jobs: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]
     return due
 
 
-async def run_scheduler_loop(*, once: bool = False) -> None:
-    """Main scheduler loop.  Runs until SIGTERM or *once* is True (test mode)."""
+async def run_scheduler_loop(*, once: bool = False, manage_pid: bool = True) -> None:
+    """Main scheduler loop.  Runs until SIGTERM or *once* is True (test mode).
+
+    When embedded in the gateway process pass ``manage_pid=False`` so the
+    gateway's own PID is not written as the scheduler PID.
+
+    Jobs are executed as fire-and-forget asyncio Tasks so long-running jobs
+    never block the 30-second tick.  A running-task registry prevents the same
+    job from being launched twice concurrently.
+    """
     shutdown = asyncio.Event()
 
     def _on_signal() -> None:
@@ -381,37 +520,65 @@ async def run_scheduler_loop(*, once: bool = False) -> None:
         shutdown.set()
 
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, _on_signal)
+    try:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, _on_signal)
+    except NotImplementedError:
+        # Windows ProactorEventLoop does not support add_signal_handler
+        signal.signal(signal.SIGINT, lambda *_: _on_signal())
 
-    write_pid()
+    if manage_pid:
+        write_pid()
     logger.info("Cron scheduler started (pid=%d, tick=%ds)", os.getpid(), TICK_INTERVAL_SECONDS)
+
+    # job_name → running Task; prevents double-firing the same job
+    running_tasks: dict[str, asyncio.Task] = {}
+    # Clear module-level set in case a previous loop left stale entries (e.g. after restart)
+    _running_job_names.clear()
+
+    def _on_task_done(name: str, task: asyncio.Task) -> None:
+        """Callback: remove finished task from registry and log unexpected errors."""
+        running_tasks.pop(name, None)
+        _running_job_names.discard(name)
+        exc = task.exception() if not task.cancelled() else None
+        if exc is not None:
+            logger.error("Unexpected error in cron job %r: %s", name, exc)
 
     try:
         while not shutdown.is_set():
             now = datetime.now(timezone.utc)
             jobs = load_cron_jobs()
-            due = _jobs_due(jobs, now)
+            # Skip jobs that are already running (fire-and-forget, no double-launch)
+            due = [j for j in _jobs_due(jobs, now) if j["name"] not in running_tasks]
 
-            if due:
-                logger.info("Tick: %d job(s) due", len(due))
-                # Execute due jobs concurrently
-                results = await asyncio.gather(
-                    *(execute_job(job) for job in due), return_exceptions=True
-                )
-                for result in results:
-                    if isinstance(result, BaseException):
-                        logger.error("Unexpected error executing cron job: %s", result)
+            for job in due:
+                name = job["name"]
+                task = asyncio.create_task(execute_job(job), name=f"cron-{name}")
+                running_tasks[name] = task
+                _running_job_names.add(name)
+                task.add_done_callback(lambda t, n=name: _on_task_done(n, t))
+                logger.info("Launched cron job %r as background task", name)
 
             if once:
+                # In test/once mode: wait for all launched tasks to finish
+                if running_tasks:
+                    await asyncio.gather(*running_tasks.values(), return_exceptions=True)
                 break
 
             try:
                 await asyncio.wait_for(shutdown.wait(), timeout=TICK_INTERVAL_SECONDS)
             except asyncio.TimeoutError:
                 pass
+
     finally:
-        remove_pid()
+        # Cancel any still-running tasks on shutdown
+        if running_tasks:
+            logger.info("Cancelling %d running cron task(s) on shutdown", len(running_tasks))
+            for task in list(running_tasks.values()):
+                task.cancel()
+            await asyncio.gather(*running_tasks.values(), return_exceptions=True)
+        if manage_pid:
+            remove_pid()
         logger.info("Cron scheduler stopped")
 
 
@@ -432,28 +599,42 @@ def _run_daemon() -> None:
 
 
 def start_daemon() -> int:
-    """Fork and start the scheduler daemon.  Returns the child PID."""
+    """Start the scheduler daemon as a background process.  Returns the child PID."""
     existing = read_pid()
     if existing is not None:
         raise RuntimeError(f"Scheduler already running (pid={existing})")
 
-    pid = os.fork()
-    if pid > 0:
-        # Parent — wait a moment for the child to write its PID file
-        time.sleep(0.3)
-        return pid
-
-    # Child — detach
-    os.setsid()
-    # Redirect stdio
-    devnull = os.open(os.devnull, os.O_RDWR)
-    os.dup2(devnull, 0)
-    os.dup2(devnull, 1)
-    os.dup2(devnull, 2)
-    os.close(devnull)
-
-    _run_daemon()
-    sys.exit(0)
+    if hasattr(os, "fork"):
+        # Unix: classic double-fork daemonise
+        pid = os.fork()
+        if pid > 0:
+            time.sleep(0.3)
+            return pid
+        os.setsid()
+        devnull = os.open(os.devnull, os.O_RDWR)
+        os.dup2(devnull, 0); os.dup2(devnull, 1); os.dup2(devnull, 2)
+        os.close(devnull)
+        _run_daemon()
+        sys.exit(0)
+    else:
+        # Windows: use subprocess.Popen with DETACHED_PROCESS
+        import subprocess
+        src_root = str(Path(__file__).parent.parent.parent)  # …/src
+        env = os.environ.copy()
+        # Ensure the subprocess can locate the openharness package
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = src_root + (os.pathsep + existing_pp if existing_pp else "")
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        proc = subprocess.Popen(
+            [sys.executable, "-c",
+             "from openharness.services.cron_scheduler import _run_daemon; _run_daemon()"],
+            env=env,
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+        time.sleep(0.8)
+        return proc.pid
 
 
 def scheduler_status() -> dict[str, Any]:

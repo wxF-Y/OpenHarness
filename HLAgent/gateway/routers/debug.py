@@ -1,4 +1,4 @@
-"""Debug and diagnostics REST router."""
+"""Debug and diagnostics REST router — localhost-only endpoints."""
 
 from __future__ import annotations
 
@@ -6,26 +6,34 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 
+_LOCALHOST = {"127.0.0.1", "::1", "localhost"}
+
+
+def _require_localhost(request: Request) -> None:
+    """Raise 403 if the request does not originate from localhost."""
+    host = request.client.host if request.client else ""
+    if host not in _LOCALHOST:
+        raise HTTPException(403, "Debug endpoints are only accessible from localhost")
+
 
 @router.get("/doctor")
-async def doctor() -> dict[str, Any]:
-    from openharness.api.provider import auth_status, detect_provider
+async def doctor(request: Request) -> dict[str, Any]:
+    _require_localhost(request)
+    from openharness.api.provider import auth_status
     from openharness.auth.manager import AuthManager
     from openharness.config.settings import load_settings
-    import os
 
     settings = load_settings()
     manager = AuthManager(settings)
     active_profile_name, active_profile = settings.resolve_profile()
-    cwd = str(Path.cwd())
 
     return {
         "python_version": sys.version,
-        "cwd": cwd,
+        "cwd": str(Path.cwd()),
         "active_profile": active_profile_name,
         "model": settings.model,
         "provider": active_profile.provider if active_profile else "unknown",
@@ -44,7 +52,8 @@ async def doctor() -> dict[str, Any]:
 
 
 @router.get("/hooks")
-async def list_hooks() -> list[dict[str, Any]]:
+async def list_hooks(request: Request) -> list[dict[str, Any]]:
+    _require_localhost(request)
     try:
         from openharness.config.settings import load_settings
         from openharness.hooks import load_hook_registry

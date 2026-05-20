@@ -79,7 +79,7 @@ async def list_sessions() -> list[SessionSummary]:
     return list(reversed(results))
 
 
-_HLAGENT_SYSTEM_PROMPT = """\
+HLAGENT_SYSTEM_PROMPT = """\
 You are HLAgent, an AI coding assistant. \
 You are an interactive agent that helps users with software engineering tasks. \
 Use the instructions below and the tools available to you to assist the user.
@@ -119,7 +119,7 @@ Carefully consider the reversibility and blast radius of actions. Freely take lo
 
 @router.post("", status_code=201)
 async def create_session(req: CreateSessionRequest) -> SessionSummary:
-    base_sp = req.system_prompt if req.system_prompt is not None else _HLAGENT_SYSTEM_PROMPT
+    base_sp = req.system_prompt if req.system_prompt is not None else HLAGENT_SYSTEM_PROMPT
     # role_prefix appended after the base system prompt so it cannot override safety instructions
     full_sp = f"{base_sp}\n\n# Role Definition\n{req.role_prefix.strip()}" if req.role_prefix else base_sp
     config = AgentSessionConfig(

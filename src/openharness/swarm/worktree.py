@@ -141,7 +141,8 @@ class WorktreeManager:
     """
 
     def __init__(self, base_dir: Path | None = None) -> None:
-        self.base_dir: Path = base_dir or Path.home() / ".openharness" / "worktrees"
+        from openharness.config.paths import get_data_dir
+        self.base_dir: Path = base_dir or get_data_dir() / "worktrees"
 
     # ------------------------------------------------------------------
     # Public API

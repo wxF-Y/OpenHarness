@@ -428,10 +428,10 @@ export default function Sidebar({
         {/* 分隔线 */}
         <div style={{ height: '1px', backgroundColor: '#313244', margin: '0.25rem 0.75rem' }} />
 
-        {/* 更多工具 section — collapsed by default */}
+        {/* 更多工具 section — expanded by default */}
         <Section
           title="更多工具"
-          defaultOpen={false}
+          defaultOpen={true}
           forceOpen={advancedOpen || undefined}
           onOpen={() => setAdvancedOpen((o) => !o)}
         >

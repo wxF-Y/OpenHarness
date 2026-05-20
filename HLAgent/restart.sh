@@ -14,6 +14,13 @@ GATEWAY_PORT=7779
 WEB_PORT=5173
 GATEWAY_LOG="/tmp/hlagent_gateway.log"
 WEB_LOG="/tmp/hlagent_web.log"
+CRON_LOG="/tmp/hlagent_cron.log"
+
+# HLAgent uses ~/.hlagent/ for storage (must match gateway/main.py override)
+HLAGENT_HOME="${HLAGENT_CONFIG_DIR:-${HOME}/.hlagent}"
+export OPENHARNESS_CONFIG_DIR="$HLAGENT_HOME"
+export OPENHARNESS_DATA_DIR="$HLAGENT_HOME/data"
+export OPENHARNESS_LOGS_DIR="$HLAGENT_HOME/logs"
 
 TARGET="${1:-all}"
 
@@ -111,19 +118,37 @@ restart_web() {
 }
 
 # ---------------------------------------------------------------------------
+# cron scheduler
+# ---------------------------------------------------------------------------
+
+restart_scheduler() {
+  echo "[scheduler] Stopping existing..."
+  "$PYTHON" -m openharness cron stop 2>/dev/null || true
+  sleep 0.5
+
+  echo "[scheduler] Starting..."
+  "$PYTHON" -m openharness cron start >"$CRON_LOG" 2>&1
+  if grep -q "started\|already running" "$CRON_LOG" 2>/dev/null; then
+    echo "  $(cat "$CRON_LOG" | tail -1) → log: $CRON_LOG"
+  else
+    echo "  log: $CRON_LOG"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
 case "$TARGET" in
-  gateway) restart_gateway ;;
-  web)     restart_web ;;
+  gateway)   restart_gateway ;;
+  web)       restart_web ;;
   all)
-    restart_gateway
+    restart_gateway   # cron scheduler starts automatically inside gateway
     restart_web
     echo ""
     echo "✅ HLAgent is running:"
-    echo "   Gateway → http://127.0.0.1:${GATEWAY_PORT}"
-    echo "   Web     → http://localhost:${WEB_PORT}"
+    echo "   Gateway   → http://127.0.0.1:${GATEWAY_PORT}  (includes cron scheduler)"
+    echo "   Web       → http://localhost:${WEB_PORT}"
     ;;
   *)
     echo "Usage: bash restart.sh [gateway|web|all]"

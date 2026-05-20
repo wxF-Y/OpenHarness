@@ -57,34 +57,65 @@ def validate_timezone(tz: str | None) -> bool:
 
 
 def next_run_time(expression: str, base: datetime | None = None, tz: str | None = None) -> datetime:
-    """Return the next run time for a cron expression.
+    """Return the next run time for a cron expression as an aware UTC datetime.
 
-    The returned datetime is always UTC. If *tz* is provided, the cron expression
-    is interpreted in that IANA timezone.
+    If *tz* is provided, the cron expression is interpreted in that IANA timezone.
+    croniter.get_next(datetime) returns a naive datetime, so we always re-attach
+    tzinfo before returning to prevent silent local-time misinterpretation.
     """
     base = base or datetime.now(timezone.utc)
     if tz:
         local_base = base.astimezone(ZoneInfo(tz))
         local_next = croniter(expression, local_base).get_next(datetime)
-        return local_next.astimezone(timezone.utc)
-    return croniter(expression, base).get_next(datetime)
+        # get_next returns naive; treat as the interpreted tz then convert to UTC
+        aware_next = local_next.replace(tzinfo=ZoneInfo(tz))
+        return aware_next.astimezone(timezone.utc)
+    naive_next = croniter(expression, base).get_next(datetime)
+    return naive_next.replace(tzinfo=timezone.utc)
 
 
 def upsert_cron_job(job: dict[str, Any]) -> None:
     """Insert or replace one cron job.
 
-    Automatically sets ``enabled`` to True and computes ``next_run`` when the
-    schedule is a valid cron expression.
+    When updating an existing job:
+    - Preserves ``created_at``, ``created_by``, ``last_run``, ``last_status``
+      from the old record so history is not lost on edit.
+    - Only recalculates ``next_run`` when the schedule actually changed;
+      otherwise the original ``next_run`` is kept (prevents an edit from
+      silently pushing the trigger to the next day).
     """
     job.setdefault("enabled", True)
-    job.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-
-    schedule = job.get("schedule", "")
-    if validate_cron_expression(schedule):
-        job["next_run"] = next_run_time(schedule, tz=job.get("timezone") or job.get("tz")).isoformat()
 
     with exclusive_file_lock(_cron_lock_path()):
-        jobs = [existing for existing in load_cron_jobs() if existing.get("name") != job.get("name")]
+        existing_jobs = load_cron_jobs()
+        old = next((j for j in existing_jobs if j.get("name") == job.get("name")), None)
+
+        if old is not None:
+            # Carry forward immutable / history fields from the old record
+            for field in ("created_at", "created_by", "last_run", "last_status"):
+                if field not in job and field in old:
+                    job[field] = old[field]
+            # Recalculate next_run only when the schedule or timezone changed
+            schedule_changed = (
+                old.get("schedule") != job.get("schedule") or
+                old.get("timezone") != job.get("timezone")
+            )
+            if schedule_changed and validate_cron_expression(job.get("schedule", "")):
+                job["next_run"] = next_run_time(
+                    job["schedule"], tz=job.get("timezone") or job.get("tz")
+                ).isoformat()
+            elif not schedule_changed and "next_run" in old:
+                # Keep existing next_run so the scheduled trigger is preserved
+                job.setdefault("next_run", old["next_run"])
+        else:
+            job.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+            schedule = job.get("schedule", "")
+            if validate_cron_expression(schedule):
+                job["next_run"] = next_run_time(
+                    schedule, tz=job.get("timezone") or job.get("tz")
+                ).isoformat()
+
+        jobs = [j for j in existing_jobs if j.get("name") != job.get("name")]
         jobs.append(job)
         jobs.sort(key=lambda item: str(item.get("name", "")))
         save_cron_jobs(jobs)
@@ -113,12 +144,17 @@ def set_job_enabled(name: str, enabled: bool) -> bool:
     """Enable or disable a cron job. Returns False if job not found."""
     with exclusive_file_lock(_cron_lock_path()):
         jobs = load_cron_jobs()
-        for job in jobs:
-            if job.get("name") == name:
-                job["enabled"] = enabled
-                save_cron_jobs(jobs)
-                return True
-    return False
+        found = any(j.get("name") == name for j in jobs)
+        if not found:
+            return False
+        new_jobs = [{**j, "enabled": enabled} if j.get("name") == name else j for j in jobs]
+        # Skip write if value is already correct
+        if all(j.get("enabled") == enabled for j in new_jobs if j.get("name") == name):
+            existing = next(j for j in jobs if j.get("name") == name)
+            if existing.get("enabled") == enabled:
+                return True  # already at target state, no write needed
+        save_cron_jobs(new_jobs)
+    return True
 
 
 def mark_job_run(name: str, *, success: bool) -> None:
@@ -126,12 +162,66 @@ def mark_job_run(name: str, *, success: bool) -> None:
     with exclusive_file_lock(_cron_lock_path()):
         jobs = load_cron_jobs()
         now = datetime.now(timezone.utc)
+        new_jobs = []
+        updated = False
         for job in jobs:
             if job.get("name") == name:
-                job["last_run"] = now.isoformat()
-                job["last_status"] = "success" if success else "failed"
+                patch: dict[str, Any] = {
+                    "last_run": now.isoformat(),
+                    "last_status": "success" if success else "failed",
+                }
                 schedule = job.get("schedule", "")
                 if validate_cron_expression(schedule):
-                    job["next_run"] = next_run_time(schedule, now, tz=job.get("timezone") or job.get("tz")).isoformat()
-                save_cron_jobs(jobs)
-                return
+                    patch["next_run"] = next_run_time(schedule, now, tz=job.get("timezone") or job.get("tz")).isoformat()
+                new_jobs.append({**job, **patch})
+                updated = True
+            else:
+                new_jobs.append(job)
+        if updated:
+            save_cron_jobs(new_jobs)
+
+
+def build_cron_job_dict(
+    *,
+    name: str,
+    schedule: str,
+    command: str | None = None,
+    message: str | None = None,
+    tz_name: str | None = None,
+    cwd: str | None = None,
+    enabled: bool = True,
+    payload: dict[str, Any] | None = None,
+    notify: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Assemble a canonical cron job dict from individual fields.
+
+    Both the HTTP router and the cron_create Agent tool call this function so
+    that jobs created through either path have identical structure.
+    """
+    job: dict[str, Any] = {"name": name, "schedule": schedule, "enabled": enabled}
+    if cwd:
+        # Normalise and validate cwd to prevent path traversal in subprocess execution
+        resolved = Path(cwd).expanduser().resolve()
+        if not resolved.exists() or not resolved.is_dir():
+            raise ValueError(f"cwd must be an existing directory: {cwd!r}")
+        job["cwd"] = str(resolved)
+    if tz_name:
+        job["timezone"] = tz_name
+    if command:
+        job["command"] = command
+
+    final_payload: dict[str, Any] = dict(payload or {})
+    if message:
+        final_payload.setdefault("kind", "agent_turn")
+        final_payload.setdefault("message", message)
+    if final_payload:
+        # Only stamp kind when payload is agent-driven (not a bare env/metadata dict for command jobs)
+        if not command or message:
+            final_payload.setdefault("kind", "agent_turn")
+        job["payload"] = final_payload
+
+    if notify is not None:
+        job["notify"] = notify
+
+    return job
+

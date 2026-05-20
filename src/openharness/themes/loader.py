@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 def get_custom_themes_dir() -> Path:
     """Return the user custom themes directory."""
-    path = Path.home() / ".openharness" / "themes"
+    from openharness.config.paths import get_config_dir
+    path = get_config_dir() / "themes"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

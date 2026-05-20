@@ -6,7 +6,12 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from openharness.services.cron import upsert_cron_job, validate_cron_expression, validate_timezone
+from openharness.services.cron import (
+    build_cron_job_dict,
+    upsert_cron_job,
+    validate_cron_expression,
+    validate_timezone,
+)
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
@@ -68,36 +73,38 @@ class CronCreateTool(BaseTool):
         if not validate_timezone(arguments.timezone):
             return ToolResult(output=f"Invalid timezone: {arguments.timezone!r}", is_error=True)
 
-        payload = dict(arguments.payload or {})
-        if arguments.message:
-            payload.setdefault("kind", "agent_turn")
-            payload.setdefault("message", arguments.message)
+        # Build notify-enriched payload so feishu routing is consistent with HTTP router
+        notify_for_payload: dict[str, Any] | None = None
         if arguments.notify is not None:
-            payload.setdefault("deliver", True)
-            if str(arguments.notify.get("type") or "").strip().lower() == "feishu_dm":
-                payload.setdefault("channel", "feishu")
-                payload.setdefault("to", arguments.notify.get("user_open_id") or arguments.notify.get("open_id"))
+            notify_type = str(arguments.notify.get("type") or "").strip().lower()
+            if notify_type == "feishu_dm":
+                notify_for_payload = {
+                    "deliver": True,
+                    "channel": "feishu",
+                    "to": arguments.notify.get("user_open_id") or arguments.notify.get("open_id"),
+                }
 
-        if payload and not payload.get("message") and not arguments.command:
-            return ToolResult(output="Cron job requires payload.message, message, or command.", is_error=True)
-        if not payload and not arguments.command:
+        merged_payload: dict[str, Any] | None = None
+        if arguments.payload or notify_for_payload:
+            merged_payload = dict(arguments.payload or {})
+            if notify_for_payload:
+                merged_payload.update({k: v for k, v in notify_for_payload.items() if k not in merged_payload})
+
+        job = build_cron_job_dict(
+            name=arguments.name,
+            schedule=arguments.schedule,
+            command=arguments.command,
+            message=arguments.message,
+            tz_name=arguments.timezone,
+            cwd=arguments.cwd or str(context.cwd),
+            enabled=arguments.enabled,
+            payload=merged_payload,
+            notify=arguments.notify,
+        )
+
+        if not job.get("command") and not job.get("payload"):
             return ToolResult(output="Cron job requires command or message.", is_error=True)
 
-        job = {
-            "name": arguments.name,
-            "schedule": arguments.schedule,
-            "cwd": arguments.cwd or str(context.cwd),
-            "enabled": arguments.enabled,
-        }
-        if arguments.timezone:
-            job["timezone"] = arguments.timezone
-        if arguments.command is not None:
-            job["command"] = arguments.command
-        if payload:
-            payload.setdefault("kind", "agent_turn")
-            job["payload"] = payload
-        if arguments.notify is not None:
-            job["notify"] = arguments.notify
         upsert_cron_job(job)
         status = "enabled" if arguments.enabled else "disabled"
         return ToolResult(

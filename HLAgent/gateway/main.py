@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Isolate HLAgent storage to ~/.hlagent/ (or HLAGENT_CONFIG_DIR if set).
@@ -38,7 +42,37 @@ from routers import (
     ws,
 )
 
-app = FastAPI(title="HLAgent Gateway", version="0.1.0")
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── startup ─────────────────────────────────────────────────────────
+    from openharness.services import cron_scheduler
+    try:
+        from services.cron_runner import run_agent_turn
+        cron_scheduler.set_agent_runner(run_agent_turn)
+        task = asyncio.create_task(
+            cron_scheduler.run_scheduler_loop(manage_pid=False),
+            name="cron-scheduler",
+        )
+        cron_scheduler._scheduler_task = task
+        log.info("Cron scheduler started as in-process asyncio task")
+    except Exception as exc:
+        log.error("Failed to start cron scheduler: %s", exc)
+
+    yield
+
+    # ── shutdown ─────────────────────────────────────────────────────────
+    task = cron_scheduler._scheduler_task
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    log.info("Cron scheduler stopped")
+
+
+app = FastAPI(title="HLAgent Gateway", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,4 +101,3 @@ app.include_router(skills.router)
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "version": "0.1.0"}
-
