@@ -75,6 +75,7 @@ class TranscriptItem(BaseModel):
     tool_input: dict[str, Any] | None = None
     is_error: bool | None = None
     media: list[MediaItem] | None = None
+    thinking: str | None = None
 
 
 class TaskSnapshot(BaseModel):
@@ -107,6 +108,7 @@ class BackendEvent(BaseModel):
         "transcript_item",
         "compact_progress",
         "assistant_delta",
+        "assistant_thinking_delta",
         "assistant_complete",
         "line_complete",
         "tool_started",

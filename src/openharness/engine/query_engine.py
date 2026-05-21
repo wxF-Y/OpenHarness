@@ -18,6 +18,18 @@ from openharness.services.autodream.service import schedule_auto_dream
 from openharness.tools.base import ToolRegistry
 
 
+_EFFORT_TO_THINKING_BUDGET: dict[str, int] = {
+    "medium": 8_000,
+    "high": 16_000,
+    "max": 32_000,
+}
+
+
+def _thinking_budget_from_effort(effort: str | None) -> int | None:
+    """Map effort level to extended thinking budget tokens. None disables thinking."""
+    return _EFFORT_TO_THINKING_BUDGET.get(effort or "", None)
+
+
 class QueryEngine:
     """Owns conversation history and the tool-aware model loop."""
 
@@ -196,6 +208,9 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            thinking_budget=_thinking_budget_from_effort(
+                getattr(self._settings, "effort", None) if self._settings else None
+            ),
         )
         query_messages = list(self._messages)
         coordinator_context = self._build_coordinator_context_message()
@@ -228,6 +243,9 @@ class QueryEngine:
             ask_user_prompt=self._ask_user_prompt,
             hook_executor=self._hook_executor,
             tool_metadata=self._tool_metadata,
+            thinking_budget=_thinking_budget_from_effort(
+                getattr(self._settings, "effort", None) if self._settings else None
+            ),
         )
         async for event, usage in run_query(context, self._messages):
             if usage is not None:

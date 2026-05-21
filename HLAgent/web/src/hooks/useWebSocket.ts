@@ -47,8 +47,12 @@ export function useWebSocket(sessionId: string | null) {
         if (event.message) ss.appendDelta(event.message)
         break
 
+      case 'assistant_thinking_delta':
+        if (event.message) ss.appendThinkingDelta(event.message)
+        break
+
       case 'assistant_complete':
-        if (event.message) ss.completeAssistant(event.message)
+        ss.completeAssistant(event.message ?? '')
         break
 
       case 'line_complete':

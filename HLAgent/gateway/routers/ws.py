@@ -158,7 +158,7 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
         import re as _re
         from openharness.ui.protocol import MediaItem, TranscriptItem
         from openharness.engine.messages import (
-            DocumentBlock, ImageBlock, ToolUseBlock, ToolResultBlock, TextBlock,
+            DocumentBlock, ImageBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock, TextBlock,
         )
 
         # Strip both old <document> (legacy) and new <attachment> XML from user text
@@ -227,7 +227,16 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
                     display_text = raw_text
                     media = None
                 if display_text:
-                    item = TranscriptItem(role=role, text=display_text, media=media)
+                    thinking_parts = [
+                        block.thinking for block in content
+                        if isinstance(block, ThinkingBlock) and block.thinking.strip()
+                    ]
+                    item = TranscriptItem(
+                        role=role,
+                        text=display_text,
+                        media=media,
+                        thinking="\n".join(thinking_parts) if thinking_parts else None,
+                    )
                     await websocket.send_json(
                         BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
                     )

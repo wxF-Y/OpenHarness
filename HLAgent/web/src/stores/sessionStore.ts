@@ -9,6 +9,7 @@ interface SessionState {
   appState: AppState | null
   transcript: TranscriptItem[]
   assistantBuffer: string
+  thinkingBuffer: string
   commands: string[]
   mcpServers: McpServerSnapshot[]
   bridgeSessions: BridgeSessionSnapshot[]
@@ -24,6 +25,7 @@ interface SessionState {
   setBridgeSessions: (sessions: BridgeSessionSnapshot[]) => void
   addTranscriptItem: (item: TranscriptItem) => void
   appendDelta: (text: string) => void
+  appendThinkingDelta: (text: string) => void
   completeAssistant: (text: string) => void
   clearTranscript: () => void
   setBusy: (busy: boolean, label?: string) => void
@@ -39,6 +41,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   appState: null,
   transcript: [],
   assistantBuffer: '',
+  thinkingBuffer: '',
   commands: [],
   mcpServers: [],
   bridgeSessions: [],
@@ -56,14 +59,28 @@ export const useSessionStore = create<SessionState>((set) => ({
   setMcpServers: (mcpServers) => set({ mcpServers }),
   setBridgeSessions: (bridgeSessions) => set({ bridgeSessions }),
   addTranscriptItem: (item) =>
-    set((prev) => ({ transcript: [...prev.transcript, item], assistantBuffer: '' })),
+    set((prev) => ({ transcript: [...prev.transcript, item], assistantBuffer: '', thinkingBuffer: '' })),
   appendDelta: (text) => set((prev) => ({ assistantBuffer: prev.assistantBuffer + text })),
+  appendThinkingDelta: (text) => set((prev) => ({ thinkingBuffer: prev.thinkingBuffer + text })),
   completeAssistant: (text) =>
-    set((prev) => ({
-      assistantBuffer: '',
-      transcript: [...prev.transcript, { role: 'assistant' as const, text }],
-    })),
-  clearTranscript: () => set({ transcript: [], assistantBuffer: '' }),
+    set((prev) => {
+      const hasContent = text.trim() || prev.thinkingBuffer
+      return {
+        assistantBuffer: '',
+        thinkingBuffer: '',
+        transcript: hasContent
+          ? [
+              ...prev.transcript,
+              {
+                role: 'assistant' as const,
+                text,
+                thinking: prev.thinkingBuffer || undefined,
+              },
+            ]
+          : prev.transcript,
+      }
+    }),
+  clearTranscript: () => set({ transcript: [], assistantBuffer: '', thinkingBuffer: '' }),
   setBusy: (busy, label?) => set({ busy, busyLabel: label }),
   setPlanMode: (planMode) => set({ planMode }),
   setTerminated: () => set({ wsStatus: 'terminated', busy: false }),
@@ -71,6 +88,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({
       transcript: [],
       assistantBuffer: '',
+      thinkingBuffer: '',
       commands: [],
       mcpServers: [],
       bridgeSessions: [],
@@ -84,6 +102,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       wsStatus: 'disconnected',
       transcript: [],
       assistantBuffer: '',
+      thinkingBuffer: '',
       commands: [],
       mcpServers: [],
       bridgeSessions: [],

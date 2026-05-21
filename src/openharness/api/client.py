@@ -45,6 +45,7 @@ class ApiMessageRequest:
     system_prompt: str | None = None
     max_tokens: int = 4096
     tools: list[dict[str, Any]] = field(default_factory=list)
+    thinking: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,13 @@ class ApiTextDeltaEvent:
     """Incremental text produced by the model."""
 
     text: str
+
+
+@dataclass(frozen=True)
+class ApiThinkingDeltaEvent:
+    """Incremental thinking text produced by the model (extended thinking)."""
+
+    thinking: str
 
 
 @dataclass(frozen=True)
@@ -73,7 +81,7 @@ class ApiRetryEvent:
     delay_seconds: float
 
 
-ApiStreamEvent = ApiTextDeltaEvent | ApiMessageCompleteEvent | ApiRetryEvent
+ApiStreamEvent = ApiTextDeltaEvent | ApiThinkingDeltaEvent | ApiMessageCompleteEvent | ApiRetryEvent
 
 
 class SupportsStreamingMessages(Protocol):
@@ -213,8 +221,25 @@ class AnthropicApiClient:
             )
         if request.tools:
             params["tools"] = request.tools
+        if request.thinking:
+            params["thinking"] = request.thinking
+            if not self._claude_oauth:
+                params.setdefault("extra_headers", {})
+                cur_beta = params["extra_headers"].get("anthropic-beta", "")
+                thinking_beta = "interleaved-thinking-2025-05-14"
+                if thinking_beta not in cur_beta:
+                    params["extra_headers"]["anthropic-beta"] = (
+                        f"{cur_beta},{thinking_beta}" if cur_beta else thinking_beta
+                    )
         if self._claude_oauth:
             params["betas"] = claude_oauth_betas()
+            if request.thinking:
+                # OAuth betas are sent via params["betas"], not extra_headers.
+                # Append the thinking beta here so it stays active for all turns
+                # that carry ThinkingBlocks in their history.
+                thinking_beta = "interleaved-thinking-2025-05-14"
+                if thinking_beta not in params["betas"]:
+                    params["betas"] = list(params["betas"]) + [thinking_beta]
             params["metadata"] = {
                 "user_id": json.dumps(
                     {
@@ -234,11 +259,15 @@ class AnthropicApiClient:
                     if getattr(event, "type", None) != "content_block_delta":
                         continue
                     delta = getattr(event, "delta", None)
-                    if getattr(delta, "type", None) != "text_delta":
-                        continue
-                    text = getattr(delta, "text", "")
-                    if text:
-                        yield ApiTextDeltaEvent(text=text)
+                    delta_type = getattr(delta, "type", None)
+                    if delta_type == "text_delta":
+                        text = getattr(delta, "text", "")
+                        if text:
+                            yield ApiTextDeltaEvent(text=text)
+                    elif delta_type == "thinking_delta":
+                        thinking = getattr(delta, "thinking", "")
+                        if thinking:
+                            yield ApiThinkingDeltaEvent(thinking=thinking)
 
                 final_message = await stream.get_final_message()
         except APIError as exc:

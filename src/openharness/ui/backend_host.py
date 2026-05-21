@@ -22,6 +22,7 @@ from openharness.coordinator.coordinator_mode import is_coordinator_mode
 from openharness.themes import list_themes
 from openharness.engine.stream_events import (
     AssistantTextDelta,
+    AssistantThinkingDelta,
     AssistantTurnComplete,
     CompactProgressEvent,
     ErrorEvent,
@@ -265,6 +266,9 @@ class ReactBackendHost:
         """
         if isinstance(event, AssistantTextDelta):
             await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+            return
+        if isinstance(event, AssistantThinkingDelta):
+            await self._emit(BackendEvent(type="assistant_thinking_delta", message=event.thinking))
             return
         if isinstance(event, CompactProgressEvent):
             await self._emit(

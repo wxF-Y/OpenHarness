@@ -4,10 +4,12 @@ import MDRenderer from './MDRenderer'
 import ToolCallCard from './ToolCallCard'
 import ImageGrid from './ImageGrid'
 import ImageLightbox from './ImageLightbox'
+import ThinkingBlock from './ThinkingBlock'
 
 interface Props {
   items: TranscriptItem[]
   assistantBuffer: string
+  thinkingBuffer: string
   sessionId?: string
 }
 
@@ -100,6 +102,9 @@ function MessageRow({ item, sessionId }: { item: TranscriptItem; sessionId?: str
         <RoleLabel role={item.role} />
       </div>
       <div style={{ paddingLeft: '0.5rem' }}>
+        {item.role === 'assistant' && item.thinking && (
+          <ThinkingBlock thinking={item.thinking} />
+        )}
         {item.role === 'assistant' ? (
           <MDRenderer content={item.text} />
         ) : (
@@ -115,7 +120,7 @@ function MessageRow({ item, sessionId }: { item: TranscriptItem; sessionId?: str
   )
 }
 
-export default function TranscriptViewer({ items, assistantBuffer, sessionId }: Props) {
+export default function TranscriptViewer({ items, assistantBuffer, thinkingBuffer, sessionId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -129,7 +134,7 @@ export default function TranscriptViewer({ items, assistantBuffer, sessionId }: 
 
     // Bulk replay (multiple items added at once) → instant jump, no animation stack
     // Single item (real-time chat) → smooth animation
-    const behavior: ScrollBehavior = delta > 1 || (delta === 0 && assistantBuffer) ? 'instant' : 'smooth'
+    const behavior: ScrollBehavior = delta > 1 || (delta === 0 && (assistantBuffer || thinkingBuffer)) ? 'instant' : 'smooth'
     // Use direct scroll on containerRef instead of scrollIntoView to avoid
     // Chromium scrolling overflow:hidden ancestor containers (known browser quirk
     // that causes the header bar to be pushed off-screen).
@@ -141,7 +146,7 @@ export default function TranscriptViewer({ items, assistantBuffer, sessionId }: 
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
       }
     }
-  }, [items.length, assistantBuffer, autoScroll])
+  }, [items.length, assistantBuffer, thinkingBuffer, autoScroll])
 
   // When transcript is cleared (clear_transcript event), reset counter
   useEffect(() => {
@@ -166,7 +171,7 @@ export default function TranscriptViewer({ items, assistantBuffer, sessionId }: 
     }
   }
 
-  if (items.length === 0 && !assistantBuffer) {
+  if (items.length === 0 && !assistantBuffer && !thinkingBuffer) {
     return (
       <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c7086', fontSize: '0.875rem' }}>
         <div style={{ textAlign: 'center' }}>
@@ -202,13 +207,18 @@ export default function TranscriptViewer({ items, assistantBuffer, sessionId }: 
           return <MessageRow key={key} item={item} sessionId={sessionId} />
         })}
 
-        {assistantBuffer && (
+        {(thinkingBuffer || assistantBuffer) && (
           <div style={{ padding: '0.5rem 0' }}>
             <div style={{ marginBottom: '0.25rem' }}>
               <RoleLabel role="assistant" />
             </div>
             <div style={{ paddingLeft: '0.5rem' }}>
-              <MDRenderer content={assistantBuffer} />
+              {thinkingBuffer && (
+                <ThinkingBlock thinking={thinkingBuffer} streaming />
+              )}
+              {assistantBuffer && (
+                <MDRenderer content={assistantBuffer} />
+              )}
             </div>
           </div>
         )}

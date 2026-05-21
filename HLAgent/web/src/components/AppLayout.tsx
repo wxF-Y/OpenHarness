@@ -109,7 +109,7 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
 
       {/* ── 中间内容区 ── */}
       <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} sessionId={sessionId} />
+        <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} thinkingBuffer={store.thinkingBuffer} sessionId={sessionId} />
       </div>
 
       {/* ── 底部固定输入框 ── */}

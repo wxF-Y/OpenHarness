@@ -55,6 +55,14 @@ class ToolUseBlock(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
 
 
+class ThinkingBlock(BaseModel):
+    """Extended thinking content produced by the model (must be replayed in multi-turn)."""
+
+    type: Literal["thinking"] = "thinking"
+    thinking: str
+    signature: str = ""
+
+
 class ToolResultBlock(BaseModel):
     """Tool result content sent back to the model."""
 
@@ -66,7 +74,7 @@ class ToolResultBlock(BaseModel):
 
 
 ContentBlock = Annotated[
-    TextBlock | ImageBlock | DocumentBlock | ToolUseBlock | ToolResultBlock,
+    TextBlock | ImageBlock | DocumentBlock | ToolUseBlock | ThinkingBlock | ToolResultBlock,
     Field(discriminator="type"),
 ]
 
@@ -120,7 +128,7 @@ class ConversationMessage(BaseModel):
             for block in self.content:
                 if isinstance(block, TextBlock) and block.text.strip():
                     return False
-                if isinstance(block, (ImageBlock, DocumentBlock, ToolUseBlock, ToolResultBlock)):
+                if isinstance(block, (ImageBlock, DocumentBlock, ToolUseBlock, ToolResultBlock, ThinkingBlock)):
                     return False
         return True
 
@@ -214,6 +222,13 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
             "input": block.input,
         }
 
+    if isinstance(block, ThinkingBlock):
+        return {
+            "type": "thinking",
+            "thinking": block.thinking,
+            "signature": block.signature,
+        }
+
     # ToolResultBlock — content may be str or list[dict] (multi-modal tool result)
     if isinstance(block.content, list):
         return {
@@ -238,6 +253,11 @@ def assistant_message_from_api(raw_message: Any) -> ConversationMessage:
         block_type = getattr(raw_block, "type", None)
         if block_type == "text":
             content.append(TextBlock(text=getattr(raw_block, "text", "")))
+        elif block_type == "thinking":
+            content.append(ThinkingBlock(
+                thinking=getattr(raw_block, "thinking", ""),
+                signature=getattr(raw_block, "signature", ""),
+            ))
         elif block_type == "tool_use":
             content.append(
                 ToolUseBlock(

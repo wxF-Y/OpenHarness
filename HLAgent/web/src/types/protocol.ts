@@ -50,6 +50,7 @@ export type BackendEventType =
   | 'transcript_item'
   | 'compact_progress'
   | 'assistant_delta'
+  | 'assistant_thinking_delta'
   | 'assistant_complete'
   | 'line_complete'
   | 'tool_started'
@@ -95,6 +96,7 @@ export interface TranscriptItem {
   tool_input?: Record<string, unknown>
   is_error?: boolean
   media?: MediaItem[]
+  thinking?: string
 }
 
 export interface TaskSnapshot {
