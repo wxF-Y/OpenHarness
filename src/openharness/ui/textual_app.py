@@ -270,7 +270,7 @@ class OpenHarnessTerminalApp(App[None]):
     async def _ask_permission(self, tool_name: str, reason: str) -> bool:
         return bool(await self._open_modal(PermissionScreen(tool_name, reason)))
 
-    async def _ask_question(self, question: str) -> str:
+    async def _ask_question(self, question: str, options: list | None = None, multi_select: bool = False) -> str:
         return str(await self._open_modal(QuestionScreen(question)) or "")
 
     async def _open_modal(self, screen: ModalScreen) -> object:

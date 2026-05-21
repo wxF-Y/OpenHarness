@@ -106,7 +106,8 @@
       "Bash(C:/Python314/python.exe -c ' *)",
       "Bash(git -C \"E:/AI/OpenHarness\" diff --staged)",
       "Bash(git -C \"E:/AI/OpenHarness\" diff)",
-      "Bash(bash -n e:/AI/OpenHarness/HLAgent/restart.sh)"
+      "Bash(bash -n e:/AI/OpenHarness/HLAgent/restart.sh)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }

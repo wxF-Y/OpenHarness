@@ -45,7 +45,7 @@ from openharness.tools import ToolRegistry, create_default_tool_registry
 from openharness.keybindings import load_keybindings
 
 PermissionPrompt = Callable[[str, str], Awaitable[bool]]
-AskUserPrompt = Callable[[str], Awaitable[str]]
+AskUserPrompt = Callable[[str, "list[dict] | None", bool], Awaitable[str]]
 SystemPrinter = Callable[[str], Awaitable[None]]
 StreamRenderer = Callable[[StreamEvent], Awaitable[None]]
 ClearHandler = Callable[[], Awaitable[None]]

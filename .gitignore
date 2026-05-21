@@ -35,3 +35,11 @@ react_tui_smoke.txt
 .DS_Store
 Thumbs.db
 uv.lock
+
+# Claude worktrees (agent sandboxes, never commit)
+.claude/worktrees/
+
+# Playwright test infrastructure (generated, not source)
+HLAgent/web/e2e/
+HLAgent/web/playwright.config.ts
+HLAgent/web/test-results/

@@ -142,6 +142,12 @@ export interface SwarmNotification {
   timestamp: number
 }
 
+export interface QuestionOption {
+  label: string
+  description?: string
+  preview?: string
+}
+
 export interface ModalData {
   kind: 'permission' | 'question'
   request_id: string
@@ -149,6 +155,8 @@ export interface ModalData {
   reason?: string
   question?: string
   tool_input?: Record<string, unknown>
+  options?: QuestionOption[]
+  multi_select?: boolean
 }
 
 export interface SelectOption {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import type { BackendEvent, FrontendRequest } from '../types/protocol'
+import type { BackendEvent, FrontendRequest, QuestionOption } from '../types/protocol'
 import { useSessionStore } from '../stores/sessionStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useSwarmStore } from '../stores/swarmStore'
@@ -102,6 +102,8 @@ export function useWebSocket(sessionId: string | null) {
             kind: 'question',
             request_id: modal.request_id,
             question: typeof modal.question === 'string' ? modal.question : undefined,
+            options: Array.isArray(modal.options) ? modal.options as QuestionOption[] : undefined,
+            multi_select: modal.multi_select === true,
           })
         }
         break

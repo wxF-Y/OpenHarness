@@ -111,6 +111,8 @@ export default function ChatPage() {
       {ui.activeModal?.kind === 'question' && (
         <QuestionModal
           question={ui.activeModal.question}
+          options={ui.activeModal.options}
+          multiSelect={ui.activeModal.multi_select}
           requestId={ui.activeModal.request_id}
           sendRequest={sendRequest}
           onClose={() => ui.setActiveModal(null)}

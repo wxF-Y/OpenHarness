@@ -730,19 +730,29 @@ class ReactBackendHost:
             finally:
                 self._permission_requests.pop(request_id, None)
 
-    async def _ask_question(self, question: str) -> str:
+    async def _ask_question(
+        self,
+        question: str,
+        options: list[dict] | None = None,
+        multi_select: bool = False,
+    ) -> str:
         request_id = uuid4().hex
         future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._question_requests[request_id] = future
         self._question_texts[request_id] = question
+        modal_payload: dict = {
+            "kind": "question",
+            "request_id": request_id,
+            "question": question,
+        }
+        if options:
+            modal_payload["options"] = options
+        if multi_select:
+            modal_payload["multi_select"] = True
         await self._emit(
             BackendEvent(
                 type="modal_request",
-                modal={
-                    "kind": "question",
-                    "request_id": request_id,
-                    "question": question,
-                },
+                modal=modal_payload,
             )
         )
         try:

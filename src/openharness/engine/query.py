@@ -53,7 +53,7 @@ log = logging.getLogger(__name__)
 
 
 PermissionPrompt = Callable[[str, str, "dict[str, Any] | None"], Awaitable[bool]]
-AskUserPrompt = Callable[[str], Awaitable[str]]
+AskUserPrompt = Callable[[str, "list[dict[str, Any]] | None", bool], Awaitable[str]]
 
 MAX_TRACKED_READ_FILES = 6
 MAX_TRACKED_SKILLS = 8
