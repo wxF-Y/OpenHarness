@@ -148,6 +148,7 @@ export interface ModalData {
   tool_name?: string
   reason?: string
   question?: string
+  tool_input?: Record<string, unknown>
 }
 
 export interface SelectOption {

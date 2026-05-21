@@ -92,6 +92,9 @@ export function useWebSocket(sessionId: string | null) {
             request_id: modal.request_id,
             tool_name: typeof modal.tool_name === 'string' ? modal.tool_name : undefined,
             reason: typeof modal.reason === 'string' ? modal.reason : undefined,
+            tool_input: modal.tool_input != null && typeof modal.tool_input === 'object'
+              ? modal.tool_input as Record<string, unknown>
+              : undefined,
           })
         } else if (modal?.kind === 'question') {
           if (typeof modal.request_id !== 'string') break

@@ -705,7 +705,7 @@ class ReactBackendHost:
             )
         return options
 
-    async def _ask_permission(self, tool_name: str, reason: str) -> bool:
+    async def _ask_permission(self, tool_name: str, reason: str, tool_input: dict | None = None) -> bool:
         async with self._permission_lock:
             request_id = uuid4().hex
             future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
@@ -718,6 +718,7 @@ class ReactBackendHost:
                         "request_id": request_id,
                         "tool_name": tool_name,
                         "reason": reason,
+                        "tool_input": tool_input,
                     },
                 )
             )

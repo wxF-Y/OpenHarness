@@ -102,6 +102,7 @@ export default function ChatPage() {
         <PermissionModal
           toolName={ui.activeModal.tool_name}
           reason={ui.activeModal.reason}
+          toolInput={ui.activeModal.tool_input}
           requestId={ui.activeModal.request_id}
           sendRequest={sendRequest}
           onClose={() => ui.setActiveModal(null)}

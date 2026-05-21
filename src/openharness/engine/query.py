@@ -52,7 +52,7 @@ MAX_SAFE_COMPLETION_TOKENS = 128_000
 log = logging.getLogger(__name__)
 
 
-PermissionPrompt = Callable[[str, str], Awaitable[bool]]
+PermissionPrompt = Callable[[str, str, "dict[str, Any] | None"], Awaitable[bool]]
 AskUserPrompt = Callable[[str], Awaitable[str]]
 
 MAX_TRACKED_READ_FILES = 6
@@ -995,7 +995,7 @@ async def _execute_tool_call(
                         "reason": decision.reason,
                     },
                 )
-            confirmed = await context.permission_prompt(tool_name, decision.reason)
+            confirmed = await context.permission_prompt(tool_name, decision.reason, tool_input)
             if not confirmed:
                 log.debug("permission denied by user for %s", tool_name)
                 return ToolResultBlock(
