@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from openharness.state.app_state import AppState
 from openharness.ui.backend_host import BackendHostConfig, ReactBackendHost
-from openharness.ui.protocol import BackendEvent, FrontendRequest
+from openharness.ui.protocol import BackendEvent, FrontendRequest, MediaItem, TranscriptItem
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -162,6 +167,157 @@ class WebBackendHost(ReactBackendHost):
         if self._bundle is None:
             return None
         return self._bundle.session_backend
+
+    def get_pending_questions(self) -> list[dict]:
+        """Return modal_request payloads for all pending ask_user_question calls.
+
+        Used by the WebSocket reconnect handler to re-send question modals that
+        were drained from the event queue before the client reconnected.
+        """
+        return [
+            {"kind": "question", "request_id": req_id, "question": self._question_texts.get(req_id, "")}
+            for req_id, future in self._question_requests.items()
+            if not future.done()
+        ]
+
+    # ------------------------------------------------------------------ #
+    # Attachment processing — overrides base _build_submit_coroutine
+    # ------------------------------------------------------------------ #
+
+    async def _build_submit_coroutine(self, request: FrontendRequest):
+        """Override: when attachments present, process them before submitting."""
+        if request.attachments:
+            return self._process_message_with_attachments(request)
+        return await super()._build_submit_coroutine(request)
+
+    async def _process_message_with_attachments(self, request: FrontendRequest) -> bool:
+        """Process attachments, build ConversationMessage, submit to engine."""
+        from openharness.services.attachment_processor import process_attachments
+        from openharness.engine.messages import ConversationMessage, TextBlock, ImageBlock, DocumentBlock
+
+        assert self._bundle is not None
+        try:
+            return await self._process_message_with_attachments_inner(request)
+        except Exception as exc:
+            log.warning("Unhandled error in _process_message_with_attachments: %s", exc)
+            await self._emit(BackendEvent(type="error", message=f"附件处理错误：{exc}"))
+            return True
+        finally:
+            # Guarantee line_complete is always emitted so the frontend never
+            # stays frozen after an attachment message.
+            # We check whether the inner method already emitted it by looking at
+            # the event queue length — simplest approach is to always emit here
+            # and let the frontend handle duplicate line_complete gracefully.
+            await self._emit(BackendEvent(type="line_complete"))
+
+    async def _process_message_with_attachments_inner(self, request: FrontendRequest) -> bool:
+        """Inner implementation — called by _process_message_with_attachments."""
+        from openharness.services.attachment_processor import process_attachments
+        from openharness.engine.messages import ConversationMessage, TextBlock, ImageBlock, DocumentBlock
+
+        assert self._bundle is not None
+
+        # Save non-text/image uploads to ~/.hlagent/uploads/ so the model gets a
+        # full absolute path it can pass to read_file or other tools.
+        _hlagent_home = Path(os.environ.get("HLAGENT_CONFIG_DIR", Path.home() / ".hlagent"))
+        upload_dir = _hlagent_home / "uploads"
+        content_blocks, errors = process_attachments(request.attachments or [], upload_dir=upload_dir)
+
+        if errors and not content_blocks:
+            for err in errors:
+                await self._emit(BackendEvent(type="error", message=err.message))
+            return True
+
+        # Emit per-file errors that didn't block everything
+        for err in errors:
+            await self._emit(BackendEvent(type="error", message=err.message))
+
+        # Build user_media for transcript display — derived from original attachments
+        # so every attachment (image, document, or other) gets a visual chip.
+        user_media: list[MediaItem] = []
+        doc_confirmations: list[str] = []
+
+        for att, block in zip(request.attachments or [], content_blocks):
+            if isinstance(block, ImageBlock):
+                # Inline image — show thumbnail
+                user_media.append(MediaItem(
+                    type="image",
+                    data=block.data,
+                    media_type=block.media_type,
+                    source_path=block.source_path or None,
+                    filename=att.filename,
+                ))
+            elif isinstance(block, DocumentBlock):
+                # Text file extracted inline — show doc chip + confirmation
+                user_media.append(MediaItem(
+                    type="document",
+                    data="",
+                    media_type=block.mime_type,
+                    filename=block.filename,
+                ))
+                char_count = len(block.text_content)
+                doc_confirmations.append(f"📄 {block.filename} 已读取（约 {char_count:,} 字）")
+            else:
+                # TextBlock fallback (audio / video / PDF / DOCX / etc.) — show chip only
+                user_media.append(MediaItem(
+                    type="document",
+                    data="",
+                    media_type=att.mime_type,
+                    filename=att.filename,
+                ))
+
+        line = (request.line or "").strip()
+
+        # Emit document extraction confirmation messages
+        for msg in doc_confirmations:
+            await self._emit(BackendEvent(
+                type="transcript_item",
+                item=TranscriptItem(role="system", text=msg),
+            ))
+
+        # Emit user TranscriptItem with media
+        await self._emit(BackendEvent(
+            type="transcript_item",
+            item=TranscriptItem(role="user", text=line, media=user_media or None),
+        ))
+
+        # Build ConversationMessage: unified multi-block structure.
+        # Attachment blocks (ImageBlock / DocumentBlock / TextBlock) come first,
+        # then the user's instruction as the final TextBlock.  This gives a
+        # consistent layout regardless of file type:
+        #   [attach1, attach2, ..., TextBlock("user instruction")]
+        message_content: list = list(content_blocks)
+        if line:
+            message_content.append(TextBlock(text=line))
+        message = ConversationMessage.from_user_content(message_content)
+
+        from openharness.ui.coordinator_drain import drain_coordinator_async_agents
+        from openharness.coordinator.coordinator_mode import is_coordinator_mode
+
+        async def _print_system(message: str) -> None:
+            await self._emit(BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=message)))
+
+        async def _clear_output() -> None:
+            await self._emit(BackendEvent(type="clear_transcript"))
+
+        from openharness.ui.runtime import handle_message
+        should_continue = await handle_message(
+            self._bundle,
+            message,
+            print_system=_print_system,
+            render_event=self._render_stream_event,
+            clear_output=_clear_output,
+        )
+        if is_coordinator_mode():
+            await drain_coordinator_async_agents(
+                self._bundle,
+                prompt_seed=line,
+                print_system=_print_system,
+                render_event=self._render_stream_event,
+            )
+        await self._emit(self._status_snapshot())
+        await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+        return should_continue
 
     # ------------------------------------------------------------------ #
     # Overrides — replace stdin/stdout I/O with queue I/O

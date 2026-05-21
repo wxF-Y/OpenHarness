@@ -30,6 +30,8 @@ from routers import (
     autopilot,
     cron,
     debug,
+    files,
+    fs,
     git,
     memory,
     onboarding,
@@ -84,6 +86,8 @@ app.add_middleware(
 
 app.include_router(onboarding.router)
 app.include_router(sessions.router)
+app.include_router(files.router)
+app.include_router(fs.router)
 app.include_router(ws.router)
 app.include_router(cron.router)
 app.include_router(swarm.router)

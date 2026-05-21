@@ -44,6 +44,11 @@ dev = [
     "ruff>=0.5.0",
     "mypy>=1.10.0",
 ]
+document = [
+    "pdfminer.six>=20221105",
+    "python-docx>=1.1.0",
+    "openpyxl>=3.1.0",
+]
 
 [project.scripts]
 openharness = "openharness.cli:app"

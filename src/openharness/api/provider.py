@@ -169,6 +169,8 @@ _MULTIMODAL_MODEL_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"vision"),
     # Generic: model names containing "vl" or "vision" as a word boundary
     re.compile(r"(?:^|[-\s/])vl(?:$|[-\s])"),
+    # Generic: "omni" models (e.g. mimo-v2-omni, gpt-4o-mini) indicate multimodal
+    re.compile(r"omni"),
 ]
 
 

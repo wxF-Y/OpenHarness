@@ -36,7 +36,7 @@ def save_cron_jobs(jobs: list[dict[str, Any]]) -> None:
     """Persist cron jobs to disk."""
     atomic_write_text(
         get_cron_registry_path(),
-        json.dumps(jobs, indent=2) + "\n",
+        json.dumps(jobs, indent=2, ensure_ascii=False) + "\n",
     )
 
 

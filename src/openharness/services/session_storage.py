@@ -94,7 +94,7 @@ def save_session_snapshot(
         "summary": summary,
         "message_count": len(messages),
     }
-    data = json.dumps(payload, indent=2) + "\n"
+    data = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
     # Save as latest
     latest_path = session_dir / "latest.json"
@@ -222,7 +222,7 @@ def export_session_markdown(
         if text:
             parts.append(text)
         for block in message.tool_uses:
-            parts.append(f"\n```tool\n{block.name} {json.dumps(block.input, ensure_ascii=True)}\n```")
+            parts.append(f"\n```tool\n{block.name} {json.dumps(block.input, ensure_ascii=False)}\n```")
         for block in message.content:
             if getattr(block, "type", "") == "tool_result":
                 parts.append(f"\n```tool-result\n{block.content}\n```")

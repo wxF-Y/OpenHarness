@@ -12,6 +12,21 @@ from openharness.mcp.types import McpConnectionStatus
 from openharness.tasks.types import TaskRecord
 
 
+class AttachmentPayload(BaseModel):
+    """A single file attachment sent from the frontend.
+
+    Two modes:
+    - Browser upload: data contains base64-encoded file content, path is None.
+    - Local path reference: path contains the absolute file path, data is empty.
+    """
+
+    filename: str
+    mime_type: str
+    data: str = ""
+    size_bytes: int = 0
+    path: str | None = None
+
+
 class FrontendRequest(BaseModel):
     """One request sent from the React frontend to the Python backend."""
 
@@ -31,6 +46,24 @@ class FrontendRequest(BaseModel):
     request_id: str | None = None
     allowed: bool | None = None
     answer: str | None = None
+    attachments: list[AttachmentPayload] | None = None
+
+
+class MediaItem(BaseModel):
+    """A media item in a transcript message.
+
+    type="image": image content.
+      data="" means lazy-load via GET /api/sessions/{id}/files?path=source_path.
+      data="<base64>" means inline display.
+    type="document": document attachment chip (filename + type icon, no binary data).
+      data is always "".
+    """
+
+    type: Literal["image", "document"]
+    data: str
+    media_type: str
+    source_path: str | None = None
+    filename: str | None = None
 
 
 class TranscriptItem(BaseModel):
@@ -41,6 +74,7 @@ class TranscriptItem(BaseModel):
     tool_name: str | None = None
     tool_input: dict[str, Any] | None = None
     is_error: bool | None = None
+    media: list[MediaItem] | None = None
 
 
 class TaskSnapshot(BaseModel):
@@ -215,8 +249,10 @@ def _format_permission_mode(raw: str) -> str:
 
 
 __all__ = [
+    "AttachmentPayload",
     "BackendEvent",
     "FrontendRequest",
+    "MediaItem",
     "TaskSnapshot",
     "TranscriptItem",
 ]

@@ -12,6 +12,14 @@ export type FrontendRequestType =
   | 'interrupt'
   | 'shutdown'
 
+export interface AttachmentPayload {
+  filename: string
+  mime_type: string
+  data: string        // base64 for browser uploads; "" for path references
+  size_bytes: number
+  path?: string       // absolute local path (no upload needed)
+}
+
 export interface FrontendRequest {
   type: FrontendRequestType
   line?: string
@@ -20,6 +28,19 @@ export interface FrontendRequest {
   request_id?: string
   allowed?: boolean
   answer?: string
+  attachments?: AttachmentPayload[]
+}
+
+/** Media item in a transcript message.
+ *  type="image": data="" means lazy REST load via source_path; data="<base64>" means inline.
+ *  type="document": document attachment chip, data is always "".
+ */
+export interface MediaItem {
+  type: 'image' | 'document'
+  data: string
+  media_type: string
+  source_path?: string
+  filename?: string
 }
 
 export type BackendEventType =
@@ -73,6 +94,7 @@ export interface TranscriptItem {
   tool_name?: string
   tool_input?: Record<string, unknown>
   is_error?: boolean
+  media?: MediaItem[]
 }
 
 export interface TaskSnapshot {

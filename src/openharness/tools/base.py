@@ -30,6 +30,7 @@ class ToolResult:
     output: str
     is_error: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    media_blocks: list[dict[str, Any]] | None = None
 
 
 class BaseTool(ABC):

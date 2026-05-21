@@ -23,7 +23,10 @@ _DEFAULT_PROMPT = (
     "Avoid watermarks, unintended text, and unrelated logos."
 )
 _DEFAULT_MODEL = "gpt-image-2"
-_DEFAULT_OUTPUT_DIR = "generated_images"
+import os as _os
+
+_HLAGENT_HOME = Path(_os.environ.get("HLAGENT_CONFIG_DIR", Path.home() / ".hlagent"))
+_DEFAULT_OUTPUT_DIR = str(_HLAGENT_HOME / "media")
 ImageGenerationProvider = Literal["auto", "openai", "codex"]
 
 
@@ -107,6 +110,7 @@ class ImageGenerationTool(BaseTool):
                         "provider": "codex",
                         "revised_prompt": revised_prompt,
                     },
+                    media_blocks=_build_media_blocks(written),
                 )
 
             image_b64 = await self._generate_with_openai(arguments, config)
@@ -123,6 +127,7 @@ class ImageGenerationTool(BaseTool):
                 + "\n".join(f"Wrote {path}" for path in written)
             ),
             metadata={"paths": [str(path) for path in written], "model": model, "mode": mode, "provider": "openai"},
+            media_blocks=_build_media_blocks(written),
         )
 
     async def _generate_with_openai(self, arguments: ImageGenerationToolInput, config: dict[str, object]) -> list[str]:
@@ -236,6 +241,7 @@ class ImageGenerationTool(BaseTool):
         else:
             out_dir = Path(arguments.output_dir)
             if not out_dir.is_absolute():
+                # Relative paths are relative to cwd (user-specified override)
                 out_dir = cwd / out_dir
             out_dir = out_dir.expanduser().resolve()
             base = out_dir / f"image{suffix}"
@@ -354,3 +360,18 @@ def _extract_b64_images(result: Any) -> list[str]:
         if isinstance(url, str) and url.startswith("data:image/") and ";base64," in url:
             images.append(url.split(";base64,", 1)[1])
     return images
+
+
+def _build_media_blocks(written_paths: list[Path]) -> list[dict[str, Any]] | None:
+    """Build media_blocks for generated images (path-only, no base64 — lazy loaded via REST)."""
+    import mimetypes as _mt
+    blocks = []
+    for path in written_paths:
+        media_type, _ = _mt.guess_type(str(path))
+        blocks.append({
+            "type": "image",
+            "media_type": media_type or "image/png",
+            "data": "",
+            "source_path": str(path),
+        })
+    return blocks or None

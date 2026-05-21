@@ -37,6 +37,15 @@ class ImageBlock(BaseModel):
         return cls(media_type=media_type, data=payload, source_path=str(resolved))
 
 
+class DocumentBlock(BaseModel):
+    """Text extracted from a document file (PDF, DOCX, CSV, JSON, code, etc.)."""
+
+    type: Literal["document"] = "document"
+    filename: str
+    mime_type: str
+    text_content: str
+
+
 class ToolUseBlock(BaseModel):
     """A request from the model to execute a named tool."""
 
@@ -51,13 +60,13 @@ class ToolResultBlock(BaseModel):
 
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: str
+    content: str | list[dict[str, Any]] = ""
     is_error: bool = False
     result_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 ContentBlock = Annotated[
-    TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock,
+    TextBlock | ImageBlock | DocumentBlock | ToolUseBlock | ToolResultBlock,
     Field(discriminator="type"),
 ]
 
@@ -111,7 +120,7 @@ class ConversationMessage(BaseModel):
             for block in self.content:
                 if isinstance(block, TextBlock) and block.text.strip():
                     return False
-                if isinstance(block, (ImageBlock, ToolUseBlock, ToolResultBlock)):
+                if isinstance(block, (ImageBlock, DocumentBlock, ToolUseBlock, ToolResultBlock)):
                     return False
         return True
 
@@ -186,6 +195,17 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
             },
         }
 
+    if isinstance(block, DocumentBlock):
+        # Unified <attachment> format — consistent with PDF/other file attachments.
+        return {
+            "type": "text",
+            "text": (
+                f"<attachment filename=\"{block.filename}\" mime_type=\"{block.mime_type}\">\n"
+                f"{block.text_content}\n"
+                f"</attachment>"
+            ),
+        }
+
     if isinstance(block, ToolUseBlock):
         return {
             "type": "tool_use",
@@ -194,6 +214,14 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
             "input": block.input,
         }
 
+    # ToolResultBlock — content may be str or list[dict] (multi-modal tool result)
+    if isinstance(block.content, list):
+        return {
+            "type": "tool_result",
+            "tool_use_id": block.tool_use_id,
+            "content": block.content,
+            "is_error": block.is_error,
+        }
     return {
         "type": "tool_result",
         "tool_use_id": block.tool_use_id,
