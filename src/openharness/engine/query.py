@@ -63,6 +63,42 @@ MAX_TRACKED_ACTIVE_ARTIFACTS = 8
 MAX_TRACKED_VERIFIED_WORK = 10
 
 
+def _format_api_error(exc: Exception) -> str:
+    """Extract a human-readable error message from an API exception.
+
+    Tries to surface the HTTP status code and the response body/message when
+    the raw str(exc) is empty or unhelpfully terse.
+    """
+    base = str(exc).strip()
+
+    # Try to get status code and response body from the exception
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    body = (
+        getattr(exc, "body", None)
+        or getattr(exc, "response", None)
+        or getattr(exc, "message", None)
+    )
+    if body and hasattr(body, "get"):
+        # dict-like body (some SDK versions)
+        err_detail = body.get("error", {})
+        if isinstance(err_detail, dict):
+            body = err_detail.get("message", "") or body.get("message", "") or str(body)
+        else:
+            body = str(body)
+    elif body and not isinstance(body, str):
+        body = str(body)
+
+    parts: list[str] = []
+    if status:
+        parts.append(f"HTTP {status}")
+    if base:
+        parts.append(base)
+    elif body:
+        parts.append(str(body)[:300])
+
+    return " — ".join(parts) if parts else "未知 API 错误，请检查模型配置和网络连接"
+
+
 def _is_prompt_too_long_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return any(
@@ -623,10 +659,12 @@ async def _preprocess_images_in_messages(
 
     results = await asyncio.gather(*[_describe(mi, bi, blk) for mi, bi, blk in pending])
 
-    # Replace ImageBlocks with TextBlocks in-place
+    # Replace ImageBlocks with TextBlocks — build new content lists, don't mutate
     for msg_idx, blk_idx, description in results:
         msg = messages[msg_idx]
-        msg.content[blk_idx] = TextBlock(text=description)
+        new_content = list(msg.content)
+        new_content[blk_idx] = TextBlock(text=description)
+        messages[msg_idx] = msg.model_copy(update={"content": new_content})
 
 
 async def run_query(
@@ -648,6 +686,7 @@ async def run_query(
 
     compact_state = AutoCompactState()
     reactive_compact_attempted = False
+    messages = list(messages)  # Work on a local copy; never mutate caller's list
     last_compaction_result: tuple[list[ConversationMessage], bool] = (messages, False)
     effective_max_tokens = _bounded_completion_tokens(
         context.max_tokens,
@@ -749,7 +788,7 @@ async def run_query(
                     final_message = event.message
                     usage = event.usage
         except Exception as exc:
-            error_msg = str(exc)
+            error_msg = _format_api_error(exc)
             if _is_completion_token_limit_error(exc):
                 supported_limit = _extract_completion_token_limit(exc)
                 if supported_limit is not None and effective_max_tokens > supported_limit:
@@ -785,7 +824,8 @@ async def run_query(
         coordinator_context_message: ConversationMessage | None = None
         if context.system_prompt.startswith("You are a **coordinator**."):
             if messages and messages[-1].role == "user" and messages[-1].text.startswith("# Coordinator User Context"):
-                coordinator_context_message = messages.pop()
+                coordinator_context_message = messages[-1]
+                messages = messages[:-1]
 
         if final_message.role == "assistant" and final_message.is_effectively_empty():
             log.warning("dropping empty assistant message from provider response")
@@ -823,9 +863,10 @@ async def run_query(
             result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
             yield ToolExecutionCompleted(
                 tool_name=tc.name,
-                output=result.content,
+                output=result.content if isinstance(result.content, str) else _extract_text_from_content(result.content),
                 is_error=result.is_error,
                 metadata=result.result_metadata,
+                media_blocks=_extract_media_blocks(result.content),
             ), None
             tool_results = [result]
         else:
@@ -862,9 +903,10 @@ async def run_query(
             for tc, result in zip(tool_calls, tool_results):
                 yield ToolExecutionCompleted(
                     tool_name=tc.name,
-                    output=result.content,
+                    output=result.content if isinstance(result.content, str) else _extract_text_from_content(result.content),
                     is_error=result.is_error,
                     metadata=result.result_metadata,
+                    media_blocks=_extract_media_blocks(result.content),
                 ), None
 
         messages.append(ConversationMessage(role="user", content=tool_results))
@@ -979,9 +1021,19 @@ async def _execute_tool_call(
     )
     if artifact_path is not None:
         _remember_active_artifact(context.tool_metadata, str(artifact_path))
+
+    # Build ToolResultBlock.content: str or list[dict] when media_blocks present
+    if result.media_blocks:
+        result_content: str | list[dict] = [
+            {"type": "text", "text": inline_output},
+            *result.media_blocks,
+        ]
+    else:
+        result_content = inline_output
+
     tool_result = ToolResultBlock(
         tool_use_id=tool_use_id,
-        content=inline_output,
+        content=result_content,
         is_error=result.is_error,
         result_metadata=dict(result.metadata or {}),
     )
@@ -1045,3 +1097,21 @@ def _extract_permission_command(
         return value
 
     return None
+
+
+def _extract_text_from_content(content: str | list[dict]) -> str:
+    """Extract text string from ToolResultBlock.content (str or list[dict])."""
+    if isinstance(content, str):
+        return content
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return block.get("text", "")
+    return ""
+
+
+def _extract_media_blocks(content: str | list[dict]) -> list[dict] | None:
+    """Extract image dicts from ToolResultBlock.content list form."""
+    if not isinstance(content, list):
+        return None
+    images = [b for b in content if isinstance(b, dict) and b.get("type") == "image"]
+    return images or None

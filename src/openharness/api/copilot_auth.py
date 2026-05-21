@@ -102,7 +102,7 @@ def save_copilot_auth(token: str, *, enterprise_url: str | None = None) -> None:
         payload["enterprise_url"] = enterprise_url
     atomic_write_text(
         path,
-        json.dumps(payload, indent=2) + "\n",
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
         mode=0o600,
     )
     log.info("Copilot auth saved to %s", path)
@@ -156,6 +156,10 @@ def request_device_code(
     github_domain: str = "github.com",
 ) -> DeviceCodeResponse:
     """Start the OAuth device flow and return the device/user codes."""
+    # Validate domain: must be a plain hostname/FQDN with no path or auth components
+    import re as _re
+    if not _re.fullmatch(r'[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?', github_domain):
+        raise ValueError(f"Invalid github_domain: {github_domain!r}")
     url = f"https://{github_domain}/login/device/code"
     resp = httpx.post(
         url,

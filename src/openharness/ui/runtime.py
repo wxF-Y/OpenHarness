@@ -25,6 +25,7 @@ from openharness.config import get_config_file_path, load_settings
 from openharness.engine import QueryEngine
 from openharness.engine.messages import (
     ConversationMessage,
+    TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     sanitize_conversation_messages,
@@ -242,6 +243,76 @@ def _resolve_api_client_from_settings(settings) -> SupportsStreamingMessages:
     )
 
 
+def _build_app_state(
+    settings: "Settings",
+    cwd: str,
+    mcp_manager: "McpClientManager",
+    provider: "ProviderInfo",
+    bridge_manager: "BridgeManager",
+) -> "AppStateStore":
+    return AppStateStore(
+        AppState(
+            model=settings.model,
+            permission_mode=settings.permission.mode.value,
+            theme=settings.theme,
+            cwd=cwd,
+            provider=provider.name,
+            auth_status=auth_status(settings),
+            base_url=settings.base_url or "",
+            vim_enabled=settings.vim_mode,
+            voice_enabled=settings.voice_mode,
+            voice_available=provider.voice_supported,
+            voice_reason=provider.voice_reason,
+            fast_mode=settings.fast_mode,
+            effort=settings.effort,
+            passes=settings.passes,
+            mcp_connected=sum(1 for status in mcp_manager.list_statuses() if status.state == "connected"),
+            mcp_failed=sum(1 for status in mcp_manager.list_statuses() if status.state == "failed"),
+            bridge_sessions=len(bridge_manager.list_sessions()),
+            output_style=settings.output_style,
+            keybindings=load_keybindings(),
+        )
+    )
+
+
+def _build_tool_metadata(
+    settings: "Settings",
+    mcp_manager: "McpClientManager",
+    bridge_manager: "BridgeManager",
+    normalized_skill_dirs: tuple,
+    normalized_plugin_roots: tuple,
+    session_id: str,
+    restore_tool_metadata: dict | None,
+) -> dict:
+    base: dict = {
+        "mcp_manager": mcp_manager,
+        "bridge_manager": bridge_manager,
+        "extra_skill_dirs": normalized_skill_dirs,
+        "extra_plugin_roots": normalized_plugin_roots,
+        "session_id": session_id,
+        "vision_model_config": _resolve_vision_config(settings),
+        "image_generation_config": _resolve_image_generation_config(settings),
+        "permission_mode": settings.permission.mode.value,
+        "read_file_state": [],
+        "invoked_skills": [],
+        "async_agent_state": [],
+        "async_agent_tasks": [],
+        "recent_work_log": [],
+        "recent_verified_work": [],
+        "task_focus_state": {
+            "goal": "",
+            "recent_goals": [],
+            "active_artifacts": [],
+            "verified_state": [],
+            "next_step": "",
+        },
+        "compact_checkpoints": [],
+    }
+    if isinstance(restore_tool_metadata, dict):
+        base.update(restore_tool_metadata)
+    return base
+
+
 async def build_runtime(
     *,
     prompt: str | None = None,
@@ -283,45 +354,20 @@ async def build_runtime(
     normalized_skill_dirs = tuple(str(Path(path).expanduser().resolve()) for path in (extra_skill_dirs or ()))
     normalized_plugin_roots = tuple(str(Path(path).expanduser().resolve()) for path in (extra_plugin_roots or ()))
     plugins = load_plugins(settings, cwd, extra_roots=normalized_plugin_roots)
-    if api_client:
-        resolved_api_client = api_client
-    else:
-        resolved_api_client = _resolve_api_client_from_settings(settings)
+    resolved_api_client = api_client if api_client else _resolve_api_client_from_settings(settings)
+
     mcp_manager = McpClientManager(load_mcp_server_configs(settings, plugins))
     await mcp_manager.connect_all()
+
     tool_registry = create_default_tool_registry(mcp_manager)
-    # Register plugin-provided tools
     for plugin in plugins:
         if plugin.enabled and plugin.tools:
             for tool in plugin.tools:
                 tool_registry.register(tool)
+
     provider = detect_provider(settings)
     bridge_manager = get_bridge_manager()
-    app_state = AppStateStore(
-        AppState(
-            # Show the effective runtime model (after CLI/env/profile merges),
-            # not profile.last_model which may be stale.
-            model=settings.model,
-            permission_mode=settings.permission.mode.value,
-            theme=settings.theme,
-            cwd=cwd,
-            provider=provider.name,
-            auth_status=auth_status(settings),
-            base_url=settings.base_url or "",
-            vim_enabled=settings.vim_mode,
-            voice_enabled=settings.voice_mode,
-            voice_available=provider.voice_supported,
-            voice_reason=provider.voice_reason,
-            fast_mode=settings.fast_mode,
-            effort=settings.effort,
-            passes=settings.passes,
-            mcp_connected=sum(1 for status in mcp_manager.list_statuses() if status.state == "connected"),
-            mcp_failed=sum(1 for status in mcp_manager.list_statuses() if status.state == "failed"),
-            bridge_sessions=len(bridge_manager.list_sessions()),
-            output_style=settings.output_style,
-            keybindings=load_keybindings(),
-        )
-    )
+    app_state = _build_app_state(settings, cwd, mcp_manager, provider, bridge_manager)
     hook_reloader = HookReloader(get_config_file_path())
     hook_executor = HookExecutor(
         hook_reloader.current_registry() if api_client is None else load_hook_registry(settings, plugins),
@@ -341,30 +387,13 @@ async def build_runtime(
         include_project_memory=include_project_memory,
     )
     from uuid import uuid4
-
     session_id = uuid4().hex[:12]
 
-    restored_metadata = {
-        "permission_mode": settings.permission.mode.value,
-        "read_file_state": [],
-        "invoked_skills": [],
-        "async_agent_state": [],
-        "async_agent_tasks": [],
-        "recent_work_log": [],
-        "recent_verified_work": [],
-        "task_focus_state": {
-            "goal": "",
-            "recent_goals": [],
-            "active_artifacts": [],
-            "verified_state": [],
-            "next_step": "",
-        },
-        "compact_checkpoints": [],
-    }
-    if isinstance(restore_tool_metadata, dict):
-        for key, value in restore_tool_metadata.items():
-            restored_metadata[key] = value
-
+    tool_metadata = _build_tool_metadata(
+        settings, mcp_manager, bridge_manager,
+        normalized_skill_dirs, normalized_plugin_roots,
+        session_id, restore_tool_metadata,
+    )
     engine = QueryEngine(
         api_client=resolved_api_client,
         tool_registry=tool_registry,
@@ -383,30 +412,18 @@ async def build_runtime(
         ask_user_prompt=ask_user_prompt,
         hook_executor=hook_executor,
         settings=settings,
-        tool_metadata={
-            "mcp_manager": mcp_manager,
-            "bridge_manager": bridge_manager,
-            "extra_skill_dirs": normalized_skill_dirs,
-            "extra_plugin_roots": normalized_plugin_roots,
-            "session_id": session_id,
-            "vision_model_config": _resolve_vision_config(settings),
-            "image_generation_config": _resolve_image_generation_config(settings),
-            **restored_metadata,
-        },
+        tool_metadata=tool_metadata,
     )
     if autodream_context is not None:
         engine.tool_metadata["autodream_context"] = autodream_context
-    # Restore messages from a saved session if provided
     if restore_messages:
         restored = sanitize_conversation_messages(
             [ConversationMessage.model_validate(m) for m in restore_messages]
         )
         engine.load_messages(restored)
 
-    # Start Docker sandbox if configured
     if settings.sandbox.enabled and settings.sandbox.backend == "docker":
         from openharness.sandbox.session import start_docker_sandbox
-
         await start_docker_sandbox(settings, session_id, Path(cwd))
 
     return RuntimeBundle(
@@ -512,7 +529,7 @@ def _format_pending_tool_results(messages: list[ConversationMessage]) -> str | N
     for tr in tool_results[:max_results]:
         tu = tool_uses_by_id.get(tr.tool_use_id)
         if tu is not None:
-            raw_input = json.dumps(tu.input, ensure_ascii=True, sort_keys=True)
+            raw_input = json.dumps(tu.input, ensure_ascii=False, sort_keys=True)
             lines.append(
                 f"- {tu.name} {_truncate(raw_input, 200)} -> {_truncate(tr.content.strip(), 400)}"
             )
@@ -571,113 +588,123 @@ def refresh_runtime_client(bundle: RuntimeBundle) -> None:
     sync_app_state(bundle)
 
 
-async def handle_line(
+async def handle_message(
     bundle: RuntimeBundle,
-    line: str,
+    message: ConversationMessage,
     *,
     print_system: SystemPrinter,
     render_event: StreamRenderer,
     clear_output: ClearHandler,
 ) -> bool:
-    """Handle one submitted line for either headless or TUI rendering."""
+    """Handle one user ConversationMessage — supports text-only and multimodal content.
+
+    If the message contains only a single TextBlock that starts with '/', slash-command
+    parsing is attempted.  Any other content (attachments, multiple blocks) bypasses
+    command parsing and goes straight to the engine.
+    """
     if not bundle.external_api_client:
         bundle.hook_executor.update_registry(
             load_hook_registry(bundle.current_settings(), bundle.current_plugins())
         )
 
-    command_context = CommandContext(
-        engine=bundle.engine,
-        hooks_summary=bundle.hook_summary(),
-        mcp_summary=bundle.mcp_summary(),
-        plugin_summary=bundle.plugin_summary(),
-        cwd=bundle.cwd,
-        tool_registry=bundle.tool_registry,
-        app_state=bundle.app_state,
-        session_backend=bundle.session_backend,
-        session_id=bundle.session_id,
-        extra_skill_dirs=bundle.extra_skill_dirs,
-        extra_plugin_roots=bundle.extra_plugin_roots,
-        memory_backend=bundle.memory_backend,
-        include_project_memory=bundle.include_project_memory,
-    )
-    parsed = bundle.commands.lookup(line) or lookup_skill_slash_command(line, command_context)
-    if parsed is not None:
-        command, args = parsed
-        result = await command.handler(
-            args,
-            command_context,
+    # Try command parsing only for pure single-TextBlock messages
+    if len(message.content) == 1 and isinstance(message.content[0], TextBlock):
+        line = message.content[0].text
+        command_context = CommandContext(
+            engine=bundle.engine,
+            hooks_summary=bundle.hook_summary(),
+            mcp_summary=bundle.mcp_summary(),
+            plugin_summary=bundle.plugin_summary(),
+            cwd=bundle.cwd,
+            tool_registry=bundle.tool_registry,
+            app_state=bundle.app_state,
+            session_backend=bundle.session_backend,
+            session_id=bundle.session_id,
+            extra_skill_dirs=bundle.extra_skill_dirs,
+            extra_plugin_roots=bundle.extra_plugin_roots,
+            memory_backend=bundle.memory_backend,
+            include_project_memory=bundle.include_project_memory,
         )
-        if result.refresh_runtime:
-            refresh_runtime_client(bundle)
-        await _render_command_result(result, print_system, clear_output, render_event)
-        if result.submit_prompt is not None:
-            original_model = bundle.engine.model
-            if result.submit_model:
-                bundle.engine.set_model(result.submit_model)
-            settings = bundle.current_settings()
-            submit_prompt = result.submit_prompt
-            system_prompt = build_runtime_system_prompt(
-                settings,
-                cwd=bundle.cwd,
-                latest_user_prompt=submit_prompt,
-                extra_skill_dirs=bundle.extra_skill_dirs,
-                extra_plugin_roots=bundle.extra_plugin_roots,
-                include_project_memory=bundle.include_project_memory,
-            )
-            bundle.engine.set_system_prompt(system_prompt)
-            try:
-                async for event in bundle.engine.submit_message(submit_prompt):
-                    await render_event(event)
-            except MaxTurnsExceeded as exc:
-                await print_system(f"Stopped after {exc.max_turns} turns (max_turns).")
-                pending = _format_pending_tool_results(bundle.engine.messages)
-                if pending:
-                    await print_system(pending)
-            finally:
+        parsed = bundle.commands.lookup(line) or lookup_skill_slash_command(line, command_context)
+        if parsed is not None:
+            command, args = parsed
+            result = await command.handler(args, command_context)
+            if result.refresh_runtime:
+                refresh_runtime_client(bundle)
+            await _render_command_result(result, print_system, clear_output, render_event)
+            if result.submit_prompt is not None:
+                original_model = bundle.engine.model
                 if result.submit_model:
-                    bundle.engine.set_model(original_model)
-            bundle.session_backend.save_snapshot(
-                cwd=bundle.cwd,
-                model=bundle.engine.model,
-                system_prompt=system_prompt,
-                messages=bundle.engine.messages,
-                usage=bundle.engine.total_usage,
-                session_id=bundle.session_id,
-                tool_metadata=bundle.engine.tool_metadata,
-            )
-        if result.continue_pending:
-            settings = bundle.current_settings()
-            if bundle.enforce_max_turns:
-                bundle.engine.set_max_turns(settings.max_turns)
-            system_prompt = build_runtime_system_prompt(
-                settings,
-                cwd=bundle.cwd,
-                latest_user_prompt=_last_user_text(bundle.engine.messages),
-                extra_skill_dirs=bundle.extra_skill_dirs,
-                extra_plugin_roots=bundle.extra_plugin_roots,
-                include_project_memory=bundle.include_project_memory,
-            )
-            bundle.engine.set_system_prompt(system_prompt)
-            turns = result.continue_turns if result.continue_turns is not None else bundle.engine.max_turns
-            try:
-                async for event in bundle.engine.continue_pending(max_turns=turns):
-                    await render_event(event)
-            except MaxTurnsExceeded as exc:
-                await print_system(f"Stopped after {exc.max_turns} turns (max_turns).")
-                pending = _format_pending_tool_results(bundle.engine.messages)
-                if pending:
-                    await print_system(pending)
-            bundle.session_backend.save_snapshot(
-                cwd=bundle.cwd,
-                model=settings.model,
-                system_prompt=system_prompt,
-                messages=bundle.engine.messages,
-                usage=bundle.engine.total_usage,
-                session_id=bundle.session_id,
-                tool_metadata=bundle.engine.tool_metadata,
-            )
-        sync_app_state(bundle)
-        return not result.should_exit
+                    bundle.engine.set_model(result.submit_model)
+                settings = bundle.current_settings()
+                submit_prompt = result.submit_prompt
+                system_prompt = build_runtime_system_prompt(
+                    settings,
+                    cwd=bundle.cwd,
+                    latest_user_prompt=submit_prompt,
+                    extra_skill_dirs=bundle.extra_skill_dirs,
+                    extra_plugin_roots=bundle.extra_plugin_roots,
+                    include_project_memory=bundle.include_project_memory,
+                )
+                bundle.engine.set_system_prompt(system_prompt)
+                try:
+                    async for event in bundle.engine.submit_message(submit_prompt):
+                        await render_event(event)
+                except MaxTurnsExceeded as exc:
+                    await print_system(f"Stopped after {exc.max_turns} turns (max_turns).")
+                    pending = _format_pending_tool_results(bundle.engine.messages)
+                    if pending:
+                        await print_system(pending)
+                finally:
+                    if result.submit_model:
+                        bundle.engine.set_model(original_model)
+                bundle.session_backend.save_snapshot(
+                    cwd=bundle.cwd,
+                    model=bundle.engine.model,
+                    system_prompt=system_prompt,
+                    messages=bundle.engine.messages,
+                    usage=bundle.engine.total_usage,
+                    session_id=bundle.session_id,
+                    tool_metadata=bundle.engine.tool_metadata,
+                )
+            if result.continue_pending:
+                settings = bundle.current_settings()
+                if bundle.enforce_max_turns:
+                    bundle.engine.set_max_turns(settings.max_turns)
+                system_prompt = build_runtime_system_prompt(
+                    settings,
+                    cwd=bundle.cwd,
+                    latest_user_prompt=_last_user_text(bundle.engine.messages),
+                    extra_skill_dirs=bundle.extra_skill_dirs,
+                    extra_plugin_roots=bundle.extra_plugin_roots,
+                    include_project_memory=bundle.include_project_memory,
+                )
+                bundle.engine.set_system_prompt(system_prompt)
+                turns = result.continue_turns if result.continue_turns is not None else bundle.engine.max_turns
+                try:
+                    async for event in bundle.engine.continue_pending(max_turns=turns):
+                        await render_event(event)
+                except MaxTurnsExceeded as exc:
+                    await print_system(f"Stopped after {exc.max_turns} turns (max_turns).")
+                    pending = _format_pending_tool_results(bundle.engine.messages)
+                    if pending:
+                        await print_system(pending)
+                bundle.session_backend.save_snapshot(
+                    cwd=bundle.cwd,
+                    model=settings.model,
+                    system_prompt=system_prompt,
+                    messages=bundle.engine.messages,
+                    usage=bundle.engine.total_usage,
+                    session_id=bundle.session_id,
+                    tool_metadata=bundle.engine.tool_metadata,
+                )
+            sync_app_state(bundle)
+            return not result.should_exit
+
+        # Pure text, no command match — use as latest_user_prompt for system prompt
+        latest_user_text = line
+    else:
+        latest_user_text = message.text or ""
 
     settings = bundle.current_settings()
     if bundle.enforce_max_turns:
@@ -685,14 +712,14 @@ async def handle_line(
     system_prompt = build_runtime_system_prompt(
         settings,
         cwd=bundle.cwd,
-        latest_user_prompt=line,
+        latest_user_prompt=latest_user_text,
         extra_skill_dirs=bundle.extra_skill_dirs,
         extra_plugin_roots=bundle.extra_plugin_roots,
         include_project_memory=bundle.include_project_memory,
     )
     bundle.engine.set_system_prompt(system_prompt)
     try:
-        async for event in bundle.engine.submit_message(line):
+        async for event in bundle.engine.submit_message(message):
             await render_event(event)
     except MaxTurnsExceeded as exc:
         await print_system(f"Stopped after {exc.max_turns} turns (max_turns).")
@@ -721,6 +748,24 @@ async def handle_line(
     )
     sync_app_state(bundle)
     return True
+
+
+async def handle_line(
+    bundle: RuntimeBundle,
+    line: str,
+    *,
+    print_system: SystemPrinter,
+    render_event: StreamRenderer,
+    clear_output: ClearHandler,
+) -> bool:
+    """Handle one submitted line — backward-compatible wrapper around handle_message."""
+    return await handle_message(
+        bundle,
+        ConversationMessage.from_user_text(line),
+        print_system=print_system,
+        render_event=render_event,
+        clear_output=clear_output,
+    )
 
 
 async def _render_command_result(

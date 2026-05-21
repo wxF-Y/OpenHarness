@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppView } from '../stores/uiStore'
+import { useToast } from './Toast'
 
 interface SessionSummary {
   session_id: string
@@ -187,15 +188,27 @@ export default function Sidebar({
   const [creating, setCreating] = useState(false)
   const [newSessionId, setNewSessionId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const toast = useToast()
 
-  async function handleDeleteSession(e: React.MouseEvent, sessionId: string) {
+  function requestDeleteSession(e: React.MouseEvent, sessionId: string) {
     e.stopPropagation()
-    setDeletingId(sessionId)
+    setConfirmDeleteId(sessionId)
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeleteId) return
+    const id = confirmDeleteId
+    setConfirmDeleteId(null)
+    setDeletingId(id)
     try {
-      await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId))
+      const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`删除失败：${res.status}`)
+      setSessions((prev) => prev.filter((s) => s.session_id !== id))
+    } catch {
+      toast.show('删除会话失败，请重试', 'error', 3000)
     } finally {
       setDeletingId(null)
     }
@@ -355,7 +368,7 @@ export default function Sidebar({
             <div style={{ padding: '0.25rem 0.75rem 0.3rem 1rem', color: '#6c7086', fontSize: '0.72rem' }}>暂无历史对话</div>
           )}
           {!sessionsLoading && sessions.slice(0, 10).map((s, i) => {
-            const isActive = s.session_id === activeChatSessionId
+            const isActive = s.session_id === activeChatSessionId && activeView === 'chat'
             const isNew = s.session_id === newSessionId
             const isHovered = hoveredSessionId === s.session_id
             const isDeleting = deletingId === s.session_id
@@ -392,23 +405,28 @@ export default function Sidebar({
                   {sessionLabel(s, i)}
                 </button>
                 <button
-                  onClick={(e) => handleDeleteSession(e, s.session_id)}
+                  onClick={(e) => requestDeleteSession(e, s.session_id)}
                   disabled={isDeleting}
-                  title="删除会话"
+                  title="删除此会话"
                   style={{
                     flexShrink: 0,
-                    background: 'none',
+                    background: isHovered || isDeleting ? 'rgba(243,139,168,0.12)' : 'none',
                     border: 'none',
-                    color: '#6c7086',
+                    borderRadius: '4px',
+                    color: isHovered || isDeleting ? '#f38ba8' : 'transparent',
                     cursor: isDeleting ? 'not-allowed' : 'pointer',
-                    padding: '0.2rem 0.5rem 0.2rem 0.25rem',
-                    fontSize: '0.7rem',
+                    padding: '0.15rem 0.4rem',
+                    fontSize: '0.75rem',
                     opacity: isHovered || isDeleting ? 1 : 0,
-                    transition: 'opacity 100ms ease-out',
+                    transition: 'opacity 120ms ease-out, color 120ms, background 120ms',
                     lineHeight: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: '0.25rem',
                   }}
                 >
-                  {isDeleting ? '⟳' : '×'}
+                  {isDeleting ? '⟳' : '🗑'}
                 </button>
               </div>
             )
@@ -437,10 +455,41 @@ export default function Sidebar({
         >
           <NavItem icon="⏰" label="Cron 定时任务" active={activeView === 'cron'} onClick={() => onViewChange('cron')} />
           <NavItem icon="🤝" label="Swarm 协作" active={activeView === 'swarm'} onClick={() => onViewChange('swarm')} />
-          <NavItem icon="🚀" label="Autopilot" active={activeView === 'autopilot'} onClick={() => onViewChange('autopilot')} />
           <NavItem icon="🔐" label="权限设置" active={activeView === 'permissions'} onClick={() => onViewChange('permissions')} />
         </Section>
       </div>
+
+      {/* 删除确认弹窗 */}
+      {confirmDeleteId && (
+        <div
+          onClick={() => setConfirmDeleteId(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(17,17,27,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#181825', border: '1px solid #313244', borderRadius: 10, padding: '1.25rem 1.5rem', width: 280, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+          >
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#cdd6f4', marginBottom: '0.5rem' }}>删除会话</div>
+            <div style={{ fontSize: '0.8125rem', color: '#6c7086', marginBottom: '1.25rem' }}>
+              确定删除该会话？此操作不可撤销。
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                style={{ background: '#313244', border: 'none', borderRadius: 6, color: '#cdd6f4', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmDelete}
+                style={{ background: '#f38ba8', border: 'none', borderRadius: 6, color: '#1e1e2e', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

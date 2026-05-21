@@ -2,16 +2,35 @@
 
 from __future__ import annotations
 
+import re
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from hlagent_sdk import AgentSessionConfig
 from services.session_manager import session_mgr
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+
+_DOCUMENT_TAG_RE = re.compile(r"<document>.*?</document>", re.DOTALL)
+_ATTACHMENT_TAG_RE = re.compile(r"<attachment[^>]*>.*?</attachment>", re.DOTALL)
+
+
+def _extract_session_title(raw_text: str, max_len: int = 40) -> str:
+    """Return a clean session title from a user message text.
+
+    Strips inline `<document>` blocks (file attachments embedded as XML by the
+    attachment processor) so the title reflects the user's actual instruction,
+    not the embedded file content.
+    """
+    clean = _DOCUMENT_TAG_RE.sub("", raw_text)
+    clean = _ATTACHMENT_TAG_RE.sub("", clean).strip()
+    text = clean if clean else raw_text.strip()
+    return text[:max_len]
 
 
 class SessionSummary(BaseModel):
@@ -65,7 +84,7 @@ async def list_sessions() -> list[SessionSummary]:
                         )
                     else:
                         text = str(content)
-                    title = text.strip()[:40]
+                    title = _extract_session_title(text)
                     break
         results.append(SessionSummary(
             session_id=session_id,
@@ -79,6 +98,9 @@ async def list_sessions() -> list[SessionSummary]:
     return list(reversed(results))
 
 
+# HLAgent-specific system prompt — intentionally separate from OpenHarness _BASE_SYSTEM_PROMPT.
+# This prompt identifies the assistant as HLAgent; openharness/prompts/system_prompt.py
+# contains the equivalent for standalone OpenHarness sessions.
 HLAGENT_SYSTEM_PROMPT = """\
 You are HLAgent, an AI coding assistant. \
 You are an interactive agent that helps users with software engineering tasks. \
@@ -227,7 +249,7 @@ async def rewind(session_id: str) -> dict[str, Any]:
 
 
 class TagRequest(BaseModel):
-    name: str
+    name: str = Field(..., max_length=100, pattern=r'^[\w\-]+$')
 
 
 @router.post("/{session_id}/tag", status_code=201)
@@ -256,7 +278,7 @@ async def get_permission_mode(session_id: str) -> dict[str, Any]:
 
 
 class SetPermissionModeRequest(BaseModel):
-    mode: str
+    mode: Literal["default", "plan", "full_auto"]
 
 
 @router.post("/{session_id}/permission-mode")
@@ -269,4 +291,30 @@ async def set_permission_mode(session_id: str, req: SetPermissionModeRequest) ->
     from openharness.ui.protocol import FrontendRequest
     await host.push_request(FrontendRequest(type="submit_line", line=f"/permissions {req.mode}"))
     return {"mode": req.mode}
+
+
+class AttachmentMetadata(BaseModel):
+    attachment_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+
+
+@router.post("/{session_id}/attachments", status_code=201)
+async def upload_attachment(session_id: str, file: UploadFile = File(...)) -> AttachmentMetadata:
+    """Pre-upload a file attachment (optional path — Web UI uses inline base64)."""
+    host = session_mgr.get(session_id)
+    if host is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="文件过大，最大 5MB")
+
+    return AttachmentMetadata(
+        attachment_id=str(uuid.uuid4()),
+        filename=file.filename or "upload",
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=len(data),
+    )
 

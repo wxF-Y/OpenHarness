@@ -86,8 +86,9 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
   }, [sessionId])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#1e1e2e' }}>
-      <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, backgroundColor: '#1e1e2e', overflow: 'hidden' }}>
+      {/* ── 顶部固定行 ── */}
+      <div style={{ height: '44px', flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825' }}>
         <span style={{ fontSize: '0.8125rem', color: '#a6adc8' }}>
           {store.appState?.model || 'HLAgent'} · {sessionId.slice(-4)}
         </span>
@@ -103,17 +104,26 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
         </button>
       </div>
 
+      {/* ── 进度条 ── */}
       <CompactProgressBar phase={ui.compactPhase} />
-      <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} />
-      <MessageInput
-        busy={store.busy}
-        commands={store.commands}
-        sendRequest={(req) => {
-          if (req.type === 'submit_line') store.setBusy(true)
-          sendRequest(req)
-        }}
-        wsStatus={store.wsStatus}
-      />
+
+      {/* ── 中间内容区 ── */}
+      <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} sessionId={sessionId} />
+      </div>
+
+      {/* ── 底部固定输入框 ── */}
+      <div style={{ flexShrink: 0 }}>
+        <MessageInput
+          busy={store.busy}
+          commands={store.commands}
+          sendRequest={(req) => {
+            if (req.type === 'submit_line') store.setBusy(true)
+            sendRequest(req)
+          }}
+          wsStatus={store.wsStatus}
+        />
+      </div>
 
       {showSettings && <SettingsDrawer onClose={() => setShowSettings(false)} />}
     </div>
@@ -152,7 +162,7 @@ export default function AppLayout() {
     if (viewParam && VALID_VIEWS.includes(viewParam)) {
       ui.setActiveView(viewParam)
     }
-  }, [params.sessionId, viewParam])
+  }, [params.sessionId, viewParam, ui])
 
   async function createAndOpenSession() {
     const r = await fetch('/api/sessions', {
@@ -181,7 +191,7 @@ export default function AppLayout() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#1e1e2e', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
         <Sidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((c) => !c)}
@@ -192,9 +202,9 @@ export default function AppLayout() {
           activeChatSessionId={activeSessionId}
         />
 
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {/* Chat — always mounted, hidden when other view is active */}
-          <div style={{ display: ui.activeView === 'chat' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ display: ui.activeView === 'chat' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
             {activeSessionId
               ? <ChatView sessionId={activeSessionId} sendRequest={sendRequest} />
               : <WelcomeView onStart={createAndOpenSession} />

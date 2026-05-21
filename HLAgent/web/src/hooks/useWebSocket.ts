@@ -82,17 +82,19 @@ export function useWebSocket(sessionId: string | null) {
       case 'modal_request': {
         const modal = event.modal as Record<string, unknown>
         if (modal?.kind === 'permission') {
+          if (typeof modal.request_id !== 'string') break
           ui.setActiveModal({
             kind: 'permission',
-            request_id: modal.request_id as string,
-            tool_name: modal.tool_name as string | undefined,
-            reason: modal.reason as string | undefined,
+            request_id: modal.request_id,
+            tool_name: typeof modal.tool_name === 'string' ? modal.tool_name : undefined,
+            reason: typeof modal.reason === 'string' ? modal.reason : undefined,
           })
         } else if (modal?.kind === 'question') {
+          if (typeof modal.request_id !== 'string') break
           ui.setActiveModal({
             kind: 'question',
-            request_id: modal.request_id as string,
-            question: modal.question as string | undefined,
+            request_id: modal.request_id,
+            question: typeof modal.question === 'string' ? modal.question : undefined,
           })
         }
         break
@@ -120,6 +122,7 @@ export function useWebSocket(sessionId: string | null) {
 
       case 'error':
         if (event.message) ui.addErrorToast(event.message)
+        if (event.message !== 'Session is busy') ss.setBusy(false)
         break
 
       case 'shutdown':

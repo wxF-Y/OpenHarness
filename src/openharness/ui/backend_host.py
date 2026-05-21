@@ -33,11 +33,9 @@ from openharness.engine.stream_events import (
 from openharness.output_styles import load_output_styles
 from openharness.tasks import get_task_manager
 from openharness.ui.coordinator_drain import drain_coordinator_async_agents
-from openharness.ui.protocol import BackendEvent, FrontendRequest, TranscriptItem
-from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+from openharness.ui.protocol import BackendEvent, FrontendRequest, MediaItem, TranscriptItem
+from openharness.ui.runtime import build_runtime, close_runtime, handle_line, handle_message, start_runtime
 from openharness.services.session_backend import SessionBackend
-
-log = logging.getLogger(__name__)
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +76,8 @@ class ReactBackendHost:
         self._request_queue: asyncio.Queue[FrontendRequest] = asyncio.Queue()
         self._permission_requests: dict[str, asyncio.Future[bool]] = {}
         self._question_requests: dict[str, asyncio.Future[str]] = {}
+        # Stores the question text for pending questions so they can be resent after reconnect
+        self._question_texts: dict[str, str] = {}
         self._permission_lock = asyncio.Lock()
         self._busy = False
         self._running = True
@@ -161,11 +161,18 @@ class ReactBackendHost:
                     await self._emit(BackendEvent(type="error", message="Session is busy"))
                     continue
                 line = (request.line or "").strip()
-                if not line:
+                # [4b.1] Skip only when BOTH line is empty AND no attachments
+                if not line and not request.attachments:
                     continue
                 self._busy = True
                 try:
-                    should_continue = await self._run_active_request(self._process_line(line))
+                    coro = await self._build_submit_coroutine(request)
+                    if coro is None:
+                        # Empty message — nothing to do, but frontend already set
+                        # busy=true when it sent submit_line, so we must unblock it.
+                        await self._emit(BackendEvent(type="line_complete"))
+                        continue
+                    should_continue = await self._run_active_request(coro)
                 finally:
                     self._busy = False
                 if not should_continue:
@@ -224,6 +231,11 @@ class ReactBackendHost:
             await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
             await self._emit(BackendEvent(type="line_complete"))
             return True
+        except Exception as exc:
+            log.exception("Unhandled error during request processing: %s", exc)
+            await self._emit(BackendEvent(type="error", message="请求处理失败，请稍后重试"))
+            await self._emit(BackendEvent(type="line_complete"))
+            return True
         finally:
             if self._active_request_task is task:
                 self._active_request_task = None
@@ -234,10 +246,130 @@ class ReactBackendHost:
             return
         task.cancel()
 
-    async def _process_line(self, line: str, *, transcript_line: str | None = None) -> bool:
+    async def _build_submit_coroutine(self, request: FrontendRequest):
+        """Override in subclasses to inject attachment processing.
+
+        Base implementation: text-only path.  Returns the coroutine to run,
+        or None if the request should be silently skipped (empty line, no attachments).
+        """
+        line = (request.line or "").strip()
+        if not line and not request.attachments:
+            return None
+        return self._process_line(line)
+
+    async def _render_stream_event(self, event: StreamEvent) -> None:
+        """Dispatch a single StreamEvent to the appropriate BackendEvent emission.
+
+        Extracted from _process_line so SDK subclasses can reuse the same
+        dispatch table without duplicating code (and risking event-type drift).
+        """
+        if isinstance(event, AssistantTextDelta):
+            await self._emit(BackendEvent(type="assistant_delta", message=event.text))
+            return
+        if isinstance(event, CompactProgressEvent):
+            await self._emit(
+                BackendEvent(
+                    type="compact_progress",
+                    compact_phase=event.phase,
+                    compact_trigger=event.trigger,
+                    attempt=event.attempt,
+                    compact_checkpoint=event.checkpoint,
+                    compact_metadata=event.metadata,
+                    message=event.message,
+                )
+            )
+            return
+        if isinstance(event, AssistantTurnComplete):
+            await self._emit(
+                BackendEvent(
+                    type="assistant_complete",
+                    message=event.message.text.strip(),
+                    item=TranscriptItem(role="assistant", text=event.message.text.strip()),
+                )
+            )
+            await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+            return
+        if isinstance(event, ToolExecutionStarted):
+            self._last_tool_inputs[event.tool_name] = event.tool_input or {}
+            await self._emit(
+                BackendEvent(
+                    type="tool_started",
+                    tool_name=event.tool_name,
+                    tool_input=event.tool_input,
+                    item=TranscriptItem(
+                        role="tool",
+                        text=f"{event.tool_name} {json.dumps(event.tool_input, ensure_ascii=False)}",
+                        tool_name=event.tool_name,
+                        tool_input=event.tool_input,
+                    ),
+                )
+            )
+            return
+        if isinstance(event, ToolExecutionCompleted):
+            media = None
+            if event.media_blocks:
+                media = [
+                    MediaItem(
+                        type="image",
+                        data=b.get("data", ""),
+                        media_type=b.get("media_type", "image/png"),
+                        source_path=b.get("source_path"),
+                        filename=b.get("source_path", "").split("/")[-1] or None,
+                    )
+                    for b in event.media_blocks
+                    if isinstance(b, dict)
+                ]
+            await self._emit(
+                BackendEvent(
+                    type="tool_completed",
+                    tool_name=event.tool_name,
+                    output=event.output,
+                    is_error=event.is_error,
+                    item=TranscriptItem(
+                        role="tool_result",
+                        text=event.output,
+                        tool_name=event.tool_name,
+                        is_error=event.is_error,
+                        media=media,
+                    ),
+                )
+            )
+            await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
+            await self._emit(self._status_snapshot())
+            if event.tool_name in ("TodoWrite", "todo_write"):
+                tool_input = self._last_tool_inputs.get(event.tool_name, {})
+                todos = tool_input.get("todos") or tool_input.get("content") or []
+                if isinstance(todos, list) and todos:
+                    lines: list[str] = []
+                    for item in todos:
+                        if isinstance(item, dict):
+                            checked = item.get("status", "") in ("done", "completed", "x", True)
+                            text = item.get("content") or item.get("text") or str(item)
+                            lines.append(f"- [{'x' if checked else ' '}] {text}")
+                    if lines:
+                        await self._emit(BackendEvent(type="todo_update", todo_markdown="\n".join(lines)))
+                else:
+                    await self._emit_todo_update_from_output(event.output)
+            if event.tool_name in ("set_permission_mode", "plan_mode"):
+                assert self._bundle is not None
+                new_mode = self._bundle.app_state.get().permission_mode
+                await self._emit(BackendEvent(type="plan_mode_change", plan_mode=new_mode))
+            return
+        if isinstance(event, ErrorEvent):
+            await self._emit(BackendEvent(type="error", message=event.message))
+            await self._emit(
+                BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
+            )
+            return
+        if isinstance(event, StatusEvent):
+            await self._emit(
+                BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
+            )
+
+    async def _process_line(self, line: str, *, transcript_line: str | None = None, user_media: list | None = None) -> bool:
         assert self._bundle is not None
         await self._emit(
-            BackendEvent(type="transcript_item", item=TranscriptItem(role="user", text=transcript_line or line))
+            BackendEvent(type="transcript_item", item=TranscriptItem(role="user", text=transcript_line or line, media=user_media or None))
         )
 
         async def _print_system(message: str) -> None:
@@ -246,98 +378,7 @@ class ReactBackendHost:
             )
 
         async def _render_event(event: StreamEvent) -> None:
-            if isinstance(event, AssistantTextDelta):
-                await self._emit(BackendEvent(type="assistant_delta", message=event.text))
-                return
-            if isinstance(event, CompactProgressEvent):
-                await self._emit(
-                    BackendEvent(
-                        type="compact_progress",
-                        compact_phase=event.phase,
-                        compact_trigger=event.trigger,
-                        attempt=event.attempt,
-                        compact_checkpoint=event.checkpoint,
-                        compact_metadata=event.metadata,
-                        message=event.message,
-                    )
-                )
-                return
-            if isinstance(event, AssistantTurnComplete):
-                await self._emit(
-                    BackendEvent(
-                        type="assistant_complete",
-                        message=event.message.text.strip(),
-                        item=TranscriptItem(role="assistant", text=event.message.text.strip()),
-                    )
-                )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
-                return
-            if isinstance(event, ToolExecutionStarted):
-                self._last_tool_inputs[event.tool_name] = event.tool_input or {}
-                await self._emit(
-                    BackendEvent(
-                        type="tool_started",
-                        tool_name=event.tool_name,
-                        tool_input=event.tool_input,
-                        item=TranscriptItem(
-                            role="tool",
-                            text=f"{event.tool_name} {json.dumps(event.tool_input, ensure_ascii=True)}",
-                            tool_name=event.tool_name,
-                            tool_input=event.tool_input,
-                        ),
-                    )
-                )
-                return
-            if isinstance(event, ToolExecutionCompleted):
-                await self._emit(
-                    BackendEvent(
-                        type="tool_completed",
-                        tool_name=event.tool_name,
-                        output=event.output,
-                        is_error=event.is_error,
-                        item=TranscriptItem(
-                            role="tool_result",
-                            text=event.output,
-                            tool_name=event.tool_name,
-                            is_error=event.is_error,
-                        ),
-                    )
-                )
-                await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
-                await self._emit(self._status_snapshot())
-                # Emit todo_update when TodoWrite tool runs
-                if event.tool_name in ("TodoWrite", "todo_write"):
-                    tool_input = self._last_tool_inputs.get(event.tool_name, {})
-                    # TodoWrite input may have 'todos' list or markdown content field
-                    todos = tool_input.get("todos") or tool_input.get("content") or []
-                    if isinstance(todos, list) and todos:
-                        lines = []
-                        for item in todos:
-                            if isinstance(item, dict):
-                                checked = item.get("status", "") in ("done", "completed", "x", True)
-                                text = item.get("content") or item.get("text") or str(item)
-                                lines.append(f"- [{'x' if checked else ' '}] {text}")
-                        if lines:
-                            await self._emit(BackendEvent(type="todo_update", todo_markdown="\n".join(lines)))
-                    else:
-                        await self._emit_todo_update_from_output(event.output)
-                # Emit plan_mode_change when plan-related tools complete
-                if event.tool_name in ("set_permission_mode", "plan_mode"):
-                    assert self._bundle is not None
-                    new_mode = self._bundle.app_state.get().permission_mode
-                    await self._emit(BackendEvent(type="plan_mode_change", plan_mode=new_mode))
-                return
-            if isinstance(event, ErrorEvent):
-                await self._emit(BackendEvent(type="error", message=event.message))
-                await self._emit(
-                    BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
-                )
-                return
-            if isinstance(event, StatusEvent):
-                await self._emit(
-                    BackendEvent(type="transcript_item", item=TranscriptItem(role="system", text=event.message))
-                )
-                return
+            await self._render_stream_event(event)
 
         async def _clear_output() -> None:
             await self._emit(BackendEvent(type="clear_transcript"))
@@ -445,6 +486,14 @@ class ReactBackendHost:
             )
         )
 
+    async def _emit_select(self, title: str, command: str, options: list[dict]) -> None:
+        """Emit a select_request event with the given options."""
+        await self._emit(BackendEvent(
+            type="select_request",
+            modal={"kind": "select", "title": title, "command": command},
+            select_options=options,
+        ))
+
     async def _handle_select_command(self, command_name: str) -> None:
         assert self._bundle is not None
         command = command_name.strip().lstrip("/").lower()
@@ -459,7 +508,7 @@ class ReactBackendHost:
 
         if command == "provider":
             statuses = AuthManager(settings).get_profile_statuses()
-            options = [
+            await self._emit_select("Provider Profile", "provider", [
                 {
                     "value": name,
                     "label": info["label"],
@@ -467,18 +516,11 @@ class ReactBackendHost:
                     "active": info["active"],
                 }
                 for name, info in statuses.items()
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Provider Profile", "command": "provider"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "permissions":
-            options = [
+            await self._emit_select("Permission Mode", "permissions", [
                 {
                     "value": "default",
                     "label": "Default",
@@ -497,36 +539,18 @@ class ReactBackendHost:
                     "description": "Block all write operations",
                     "active": settings.permission.mode.value == "plan",
                 },
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Permission Mode", "command": "permissions"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "theme":
-            options = [
-                {
-                    "value": name,
-                    "label": name,
-                    "active": name == settings.theme,
-                }
+            await self._emit_select("Theme", "theme", [
+                {"value": name, "label": name, "active": name == settings.theme}
                 for name in list_themes()
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Theme", "command": "theme"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "output-style":
-            options = [
+            await self._emit_select("Output Style", "output-style", [
                 {
                     "value": style.name,
                     "label": style.name,
@@ -534,44 +558,23 @@ class ReactBackendHost:
                     "active": style.name == settings.output_style,
                 }
                 for style in load_output_styles()
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Output Style", "command": "output-style"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "effort":
-            options = [
+            await self._emit_select("Reasoning Effort", "effort", [
                 {"value": "low", "label": "Low", "description": "Fastest responses", "active": settings.effort == "low"},
                 {"value": "medium", "label": "Medium", "description": "Balanced reasoning", "active": settings.effort == "medium"},
                 {"value": "high", "label": "High", "description": "Deepest reasoning", "active": settings.effort == "high"},
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Reasoning Effort", "command": "effort"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "passes":
             current = int(state.passes or settings.passes)
-            options = [
+            await self._emit_select("Reasoning Passes", "passes", [
                 {"value": str(value), "label": f"{value} pass{'es' if value != 1 else ''}", "active": value == current}
                 for value in range(1, 9)
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Reasoning Passes", "command": "passes"},
-                    select_options=options,
-                )
-            )
+            ])
             return
 
         if command == "turns":
@@ -579,74 +582,41 @@ class ReactBackendHost:
             values = {32, 64, 128, 200, 256, 512}
             if isinstance(current, int):
                 values.add(current)
-            options = [{"value": "unlimited", "label": "Unlimited", "description": "Do not hard-stop this session", "active": current is None}]
+            options: list[dict] = [{"value": "unlimited", "label": "Unlimited", "description": "Do not hard-stop this session", "active": current is None}]
             options.extend(
                 {"value": str(value), "label": f"{value} turns", "active": value == current}
                 for value in sorted(values)
             )
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Max Turns", "command": "turns"},
-                    select_options=options,
-                )
-            )
+            await self._emit_select("Max Turns", "turns", options)
             return
 
         if command == "fast":
-            current = bool(state.fast_mode)
-            options = [
-                {"value": "on", "label": "On", "description": "Prefer shorter, faster responses", "active": current},
-                {"value": "off", "label": "Off", "description": "Use normal response mode", "active": not current},
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Fast Mode", "command": "fast"},
-                    select_options=options,
-                )
-            )
+            current_fast = bool(state.fast_mode)
+            await self._emit_select("Fast Mode", "fast", [
+                {"value": "on", "label": "On", "description": "Prefer shorter, faster responses", "active": current_fast},
+                {"value": "off", "label": "Off", "description": "Use normal response mode", "active": not current_fast},
+            ])
             return
 
         if command == "vim":
-            current = bool(state.vim_enabled)
-            options = [
-                {"value": "on", "label": "On", "description": "Enable Vim keybindings", "active": current},
-                {"value": "off", "label": "Off", "description": "Use standard keybindings", "active": not current},
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Vim Mode", "command": "vim"},
-                    select_options=options,
-                )
-            )
+            current_vim = bool(state.vim_enabled)
+            await self._emit_select("Vim Mode", "vim", [
+                {"value": "on", "label": "On", "description": "Enable Vim keybindings", "active": current_vim},
+                {"value": "off", "label": "Off", "description": "Use standard keybindings", "active": not current_vim},
+            ])
             return
 
         if command == "voice":
-            current = bool(state.voice_enabled)
-            options = [
-                {"value": "on", "label": "On", "description": state.voice_reason or "Enable voice mode", "active": current},
-                {"value": "off", "label": "Off", "description": "Disable voice mode", "active": not current},
-            ]
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Voice Mode", "command": "voice"},
-                    select_options=options,
-                )
-            )
+            current_voice = bool(state.voice_enabled)
+            await self._emit_select("Voice Mode", "voice", [
+                {"value": "on", "label": "On", "description": state.voice_reason or "Enable voice mode", "active": current_voice},
+                {"value": "off", "label": "Off", "description": "Disable voice mode", "active": not current_voice},
+            ])
             return
 
         if command == "model":
             options = self._model_select_options(current_model, active_profile.provider, active_profile.allowed_models)
-            await self._emit(
-                BackendEvent(
-                    type="select_request",
-                    modal={"kind": "select", "title": "Model", "command": "model"},
-                    select_options=options,
-                )
-            )
+            await self._emit_select("Model", "model", options)
             return
 
         await self._emit(BackendEvent(type="error", message=f"No selector available for /{command}"))
@@ -759,6 +729,7 @@ class ReactBackendHost:
         request_id = uuid4().hex
         future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._question_requests[request_id] = future
+        self._question_texts[request_id] = question
         await self._emit(
             BackendEvent(
                 type="modal_request",
@@ -773,6 +744,7 @@ class ReactBackendHost:
             return await future
         finally:
             self._question_requests.pop(request_id, None)
+            self._question_texts.pop(request_id, None)
 
     async def _emit(self, event: BackendEvent) -> None:
         log.debug("emit event: type=%s tool=%s", event.type, getattr(event, "tool_name", None))

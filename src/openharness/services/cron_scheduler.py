@@ -84,7 +84,7 @@ def append_history(entry: dict[str, Any]) -> None:
     path = get_history_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry) + "\n")
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def delete_job_history(job_name: str) -> int:
@@ -311,6 +311,26 @@ def _command_for_job(job: dict[str, Any]) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
+def _make_error_entry(
+    name: str,
+    command: str,
+    started_at: "datetime",
+    status: str,
+    stderr: str,
+) -> "dict[str, Any]":
+    """Build a history entry for a failed/errored job."""
+    return {
+        "name": name,
+        "command": command,
+        "started_at": started_at.isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+        "returncode": -1,
+        "status": status,
+        "stdout": "",
+        "stderr": stderr,
+    }
+
+
 async def execute_job(job: dict[str, Any]) -> dict[str, Any]:
     """Run a single cron job and return a history entry."""
     name = job["name"]
@@ -380,16 +400,7 @@ async def execute_job(job: dict[str, Any]) -> dict[str, Any]:
     try:
         command = _command_for_job(job)
     except Exception as exc:
-        entry = {
-            "name": name,
-            "command": "",
-            "started_at": started_at.isoformat(),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
-            "returncode": -1,
-            "status": "error",
-            "stdout": "",
-            "stderr": str(exc),
-        }
+        entry = _make_error_entry(name, "", started_at, "error", str(exc))
         mark_job_run(name, success=False)
         await _notify_job_result(job, entry)
         append_history(entry)
@@ -413,46 +424,19 @@ async def execute_job(job: dict[str, Any]) -> dict[str, Any]:
             await process.wait()
         except Exception:
             pass
-        entry = {
-            "name": name,
-            "command": command,
-            "started_at": started_at.isoformat(),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
-            "returncode": -1,
-            "status": "timeout",
-            "stdout": "",
-            "stderr": "Job timed out after 300s",
-        }
+        entry = _make_error_entry(name, command, started_at, "timeout", "Job timed out after 300s")
         mark_job_run(name, success=False)
         await _notify_job_result(job, entry)
         append_history(entry)
         return entry
     except SandboxUnavailableError as exc:
-        entry = {
-            "name": name,
-            "command": command,
-            "started_at": started_at.isoformat(),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
-            "returncode": -1,
-            "status": "error",
-            "stdout": "",
-            "stderr": str(exc),
-        }
+        entry = _make_error_entry(name, command, started_at, "error", str(exc))
         mark_job_run(name, success=False)
         await _notify_job_result(job, entry)
         append_history(entry)
         return entry
     except Exception as exc:
-        entry = {
-            "name": name,
-            "command": command,
-            "started_at": started_at.isoformat(),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
-            "returncode": -1,
-            "status": "error",
-            "stdout": "",
-            "stderr": str(exc),
-        }
+        entry = _make_error_entry(name, command, started_at, "error", str(exc))
         mark_job_run(name, success=False)
         await _notify_job_result(job, entry)
         append_history(entry)

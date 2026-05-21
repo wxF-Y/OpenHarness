@@ -70,7 +70,7 @@ def _save_creds_file(data: dict[str, Any]) -> None:
     path = _creds_path()
     atomic_write_text(
         path,
-        json.dumps(data, indent=2) + "\n",
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         mode=0o600,
     )
 
@@ -264,6 +264,29 @@ def _deobfuscate(ciphertext: str) -> str:
     return xored.decode("utf-8")
 
 
-# Backward compatibility — deprecated, will be removed in a future version.
-encrypt = _obfuscate
-decrypt = _deobfuscate
+def _encrypt_deprecated(data: str) -> str:
+    """Deprecated. Uses XOR obfuscation, not real encryption."""
+    import warnings
+    warnings.warn(
+        "encrypt() is deprecated. It provides XOR obfuscation only, NOT cryptographic encryption. "
+        "Calling code must not use this to protect sensitive data.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _obfuscate(data)
+
+
+def _decrypt_deprecated(ciphertext: str) -> str:
+    """Deprecated. Reverses XOR obfuscation, not real decryption."""
+    import warnings
+    warnings.warn(
+        "decrypt() is deprecated. It reverses XOR obfuscation only, NOT cryptographic decryption.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _deobfuscate(ciphertext)
+
+
+# Backward compatibility aliases — deprecated, will be removed in a future version.
+encrypt = _encrypt_deprecated
+decrypt = _decrypt_deprecated

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { TranscriptItem } from '../types/protocol'
+import ImageGrid from './ImageGrid'
 
 interface Props {
   item: TranscriptItem
   resultItem?: TranscriptItem
+  sessionId?: string
 }
 
 const TOOL_CONFIG: Record<string, { icon: string; color: string }> = {
@@ -61,7 +63,7 @@ function summarize(toolName: string, input?: Record<string, unknown>): string {
   return ''
 }
 
-export default function ToolCallCard({ item, resultItem }: Props) {
+export default function ToolCallCard({ item, resultItem, sessionId }: Props) {
   const [expanded, setExpanded] = useState(false)
   const toolName = item.tool_name || 'tool'
   const { icon, color } = getToolConfig(toolName)
@@ -70,9 +72,16 @@ export default function ToolCallCard({ item, resultItem }: Props) {
   const isError = resultItem?.is_error
   const isPlanBlocked = resultItem?.is_error && resultItem.text?.includes('Plan mode blocks')
   const pending = !resultItem
-  const outputLines = resultItem ? resultItem.text.split('\n').filter((l) => l.trim()) : []
+  const hasMedia = (resultItem?.media?.length ?? 0) > 0
+  const imageMedia = resultItem?.media?.filter(m => m.type === 'image') ?? []
+  const outputLines = resultItem && !hasMedia ? resultItem.text.split('\n').filter((l) => l.trim()) : []
   const truncated = outputLines.length > 0 && !expanded
   const displayLines = truncated ? outputLines.slice(0, 5) : outputLines
+
+  // Get directory path from first media item's source_path
+  const dirPath = imageMedia[0]?.source_path
+    ? imageMedia[0].source_path.split('/').slice(0, -1).join('/')
+    : ''
 
   return (
     <div
@@ -86,20 +95,22 @@ export default function ToolCallCard({ item, resultItem }: Props) {
       }}
     >
       {/* Header row */}
-      <div
-        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.75rem', cursor: item.tool_input ? 'pointer' : 'default' }}
+      <button
+        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.4rem 0.75rem', cursor: item.tool_input ? 'pointer' : 'default', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'inherit', font: 'inherit' }}
         onClick={() => item.tool_input && setExpanded(!expanded)}
+        aria-expanded={item.tool_input ? expanded : undefined}
       >
         <span>{icon}</span>
         <span style={{ color, fontWeight: 600 }}>{toolName}</span>
         {summary && <span style={{ color: '#6c7086' }}>{summary}</span>}
         <span style={{ marginLeft: 'auto', color: '#6c7086' }}>
           {pending && <span style={{ display: 'inline-block' }}>...</span>}
-          {!pending && !isError && <span style={{ color: '#a6e3a1' }}>ok {outputLines.length > 0 ? `${outputLines.length}L` : ''}</span>}
+          {!pending && !isError && hasMedia && <span style={{ color: '#a6e3a1' }}>ok {imageMedia.length}张图片</span>}
+          {!pending && !isError && !hasMedia && <span style={{ color: '#a6e3a1' }}>ok {outputLines.length > 0 ? `${outputLines.length}L` : ''}</span>}
           {isPlanBlocked && <span style={{ color: '#fab387' }}>blocked</span>}
           {isError && !isPlanBlocked && <span style={{ color: '#f38ba8' }}>error</span>}
         </span>
-      </div>
+      </button>
 
       {/* PLAN MODE banner */}
       {isPlanBlocked && (
@@ -126,8 +137,23 @@ export default function ToolCallCard({ item, resultItem }: Props) {
         </div>
       )}
 
-      {/* Output */}
-      {resultItem && !isError && outputLines.length > 0 && (
+      {/* Media output (images from tool results) */}
+      {hasMedia && !isError && (
+        <>
+          <ImageGrid media={imageMedia} sessionId={sessionId} />
+          {dirPath && (
+            <div style={{ padding: '0 12px 6px', fontSize: '0.7rem', color: '#6c7086', fontFamily: 'monospace' }}>
+              📁 已保存至 {dirPath.length > 50 ? '…' + dirPath.slice(-50) : dirPath}
+            </div>
+          )}
+          <div style={{ padding: '0 12px 8px', fontSize: '0.7rem', color: '#585b70' }}>
+            💬 可继续描述修改意见，AI 将重新生成
+          </div>
+        </>
+      )}
+
+      {/* Text Output */}
+      {resultItem && !isError && !hasMedia && outputLines.length > 0 && (
         <div style={{ padding: '0.25rem 0.75rem 0.4rem' }}>
           <pre style={{ backgroundColor: '#11111b', borderRadius: '4px', padding: '0.4rem 0.6rem', fontSize: '0.75rem', margin: 0, overflowX: 'auto', color: '#a6adc8', fontFamily: 'monospace', maxHeight: expanded ? 'none' : '120px', overflow: expanded ? 'auto' : 'hidden' }}>
             {displayLines.join('\n')}

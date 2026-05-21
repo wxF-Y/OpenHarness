@@ -14,6 +14,10 @@ from services.session_manager import session_mgr
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
+# Security note: This WebSocket endpoint authenticates only by session_id existence.
+# It is designed for LOCAL use only (the HLAgent gateway binds to localhost).
+# Do not expose this service on a public network interface without adding token auth.
+
 # Track the active forward_events task per session.
 # Ensures only ONE consumer reads from the event queue at a time.
 # Without this, React StrictMode's double-mount creates two simultaneous
@@ -56,15 +60,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                 from openharness.tasks import get_task_manager
                 tasks = get_task_manager().list_tasks()
                 resync = BackendEvent.ready(state, tasks, host.commands)
-                await websocket.send_json(resync.model_dump())
+                await websocket.send_json(resync.model_dump(exclude_none=True))
             except Exception as exc:
                 log.warning("Failed to send resync ready event: %s", exc)
 
         # Clear the client's local transcript before replaying.
-        await websocket.send_json(BackendEvent(type="clear_transcript").model_dump())
+        await websocket.send_json(BackendEvent(type="clear_transcript").model_dump(exclude_none=True))
 
         # Replay conversation history.
         await _replay_transcript(websocket, host)
+
+        # Re-send any pending question or permission modals that were drained
+        # from the event queue before the client reconnected.  Without this,
+        # the client has no way to respond and the session stays frozen.
+        pending_questions = getattr(host, "get_pending_questions", lambda: [])()
+        for modal_payload in pending_questions:
+            await websocket.send_json(
+                BackendEvent(type="modal_request", modal=modal_payload).model_dump(exclude_none=True)
+            )
     else:
         await host.start()
 
@@ -79,7 +92,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                     log.info("[FWD] sentinel received, exiting (session=%s)", session_id[:8])
                     break
                 log.info("[FWD] sending event type=%s (session=%s)", event.type, session_id[:8])
-                await websocket.send_json(event.model_dump())
+                await websocket.send_json(event.model_dump(exclude_none=True))
                 event = None  # clear only after successful send
         except asyncio.CancelledError:
             if event is not None:
@@ -96,9 +109,22 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
             async for raw in websocket.iter_text():
                 try:
                     req = FrontendRequest.model_validate_json(raw)
-                    await host.push_request(req)
                 except Exception as exc:
                     log.warning("Invalid FrontendRequest: %s", exc)
+                    continue
+
+                # [6.2] Server-side attachment size validation (don't trust client size_bytes)
+                if req.attachments:
+                    _5MB = 5 * 1024 * 1024
+                    _10MB = 10 * 1024 * 1024
+                    single_max = max((len(a.data) * 3 // 4 for a in req.attachments), default=0)
+                    total = sum(len(a.data) * 3 // 4 for a in req.attachments)
+                    if single_max > _5MB or total > _10MB:
+                        err = BackendEvent(type="error", message="附件过大：单文件限制 5MB，总计限制 10MB")
+                        await websocket.send_json(err.model_dump(exclude_none=True))
+                        continue
+
+                await host.push_request(req)
         except WebSocketDisconnect:
             pass
 
@@ -128,8 +154,52 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
 async def _replay_transcript(websocket: WebSocket, host: object) -> None:
     """Replay conversation history to a newly (re-)connected WS client."""
     try:
-        from openharness.ui.protocol import TranscriptItem
-        from openharness.engine.messages import ToolUseBlock, ToolResultBlock, TextBlock
+        import mimetypes as _mt
+        import re as _re
+        from openharness.ui.protocol import MediaItem, TranscriptItem
+        from openharness.engine.messages import (
+            DocumentBlock, ImageBlock, ToolUseBlock, ToolResultBlock, TextBlock,
+        )
+
+        # Strip both old <document> (legacy) and new <attachment> XML from user text
+        _DOC_RE = _re.compile(r"<document>.*?</document>", _re.DOTALL)
+        _ATT_RE = _re.compile(r"<attachment[^>]*>.*?</attachment>", _re.DOTALL)
+        # Parse filename= attribute from unified <attachment filename="..."> tags
+        _ATT_FN_RE = _re.compile(r'<attachment\s[^>]*filename="([^"]+)"', _re.DOTALL)
+
+        def _clean_user_text(raw: str) -> str:
+            clean = _DOC_RE.sub("", raw)
+            clean = _ATT_RE.sub("", clean)
+            return clean.strip()
+
+        def _rebuild_media(blocks) -> list | None:
+            media = []
+            for block in blocks:
+                if isinstance(block, ImageBlock):
+                    media.append(MediaItem(
+                        type="image",
+                        data=block.data,
+                        media_type=block.media_type,
+                        source_path=block.source_path or None,
+                        filename=block.source_path.split("/")[-1] if block.source_path else None,
+                    ))
+                elif isinstance(block, DocumentBlock):
+                    # DocumentBlock stored as-is (not merged) — unified multi-block layout
+                    media.append(MediaItem(
+                        type="document", data="",
+                        media_type=block.mime_type, filename=block.filename,
+                    ))
+                elif isinstance(block, TextBlock):
+                    # TextBlock for PDF/other: parse filename from <attachment filename="...">
+                    for m in _ATT_FN_RE.finditer(block.text):
+                        fn = m.group(1).strip()
+                        if fn:
+                            mime, _ = _mt.guess_type(fn)
+                            media.append(MediaItem(
+                                type="document", data="",
+                                media_type=mime or "application/octet-stream", filename=fn,
+                            ))
+            return media or None
 
         messages = host.get_messages()  # type: ignore[attr-defined]
         if not messages:
@@ -149,9 +219,19 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
             tool_results = [block for block in content if isinstance(block, ToolResultBlock)]
 
             if text_parts:
-                item = TranscriptItem(role=role, text="\n".join(text_parts))
-                event = BackendEvent(type="transcript_item", item=item)
-                await websocket.send_json(event.model_dump())
+                raw_text = "\n".join(text_parts)
+                if role == "user":
+                    display_text = _clean_user_text(raw_text)
+                    media = _rebuild_media(content)
+                else:
+                    display_text = raw_text
+                    media = None
+                if display_text:
+                    item = TranscriptItem(role=role, text=display_text, media=media)
+                    await websocket.send_json(
+                        BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
+                    )
+
 
             for tu in tool_uses:
                 import json as _json
@@ -163,18 +243,41 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
                     tool_input=tu.input,
                 )
                 await websocket.send_json(
-                    BackendEvent(type="transcript_item", item=item).model_dump()
+                    BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
                 )
 
             for tr in tool_results:
-                content_str = tr.content if isinstance(tr.content, str) else str(tr.content)
+                # [6.4] Handle ToolResultBlock.content: str | list[dict]
+                if isinstance(tr.content, list):
+                    text_parts_tr = [
+                        b.get("text", "") for b in tr.content
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    ]
+                    text = "\n".join(text_parts_tr)[:1000]
+                    # Restore lazy image MediaItems from source_path
+                    media = [
+                        MediaItem(
+                            type="image",
+                            data="",
+                            media_type=b.get("media_type", "image/png"),
+                            source_path=b.get("source_path"),
+                            filename=(b.get("source_path", "") or "").split("/")[-1] or None,
+                        )
+                        for b in tr.content
+                        if isinstance(b, dict) and b.get("type") == "image"
+                    ] or None
+                else:
+                    text = (tr.content or "")[:1000]
+                    media = None
+
                 item = TranscriptItem(
                     role="tool_result",
-                    text=content_str[:1000],
+                    text=text,
                     is_error=tr.is_error,
+                    media=media,
                 )
                 await websocket.send_json(
-                    BackendEvent(type="transcript_item", item=item).model_dump()
+                    BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
                 )
 
     except Exception as exc:
