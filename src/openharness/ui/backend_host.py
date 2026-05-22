@@ -241,8 +241,7 @@ class ReactBackendHost:
                     sanitized = sanitize_conversation_messages(self._bundle.engine.messages)
                     interrupt_msg = make_system_event_message(
                         "user_interrupted",
-                        "The user manually stopped the previous operation. "
-                        "Acknowledge the interruption and wait for new instructions.",
+                        "The user manually stopped the previous operation.",
                     )
                     # Always append the interrupt marker. Consecutive user messages
                     # are resolved by _flatten_consecutive_user_messages in
