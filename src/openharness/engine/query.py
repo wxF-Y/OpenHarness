@@ -52,6 +52,37 @@ MAX_SAFE_COMPLETION_TOKENS = 128_000
 log = logging.getLogger(__name__)
 
 
+def _merge_consecutive_user_messages_for_api(
+    messages: list[ConversationMessage],
+) -> list[ConversationMessage]:
+    """Return a copy with consecutive user-role messages merged for the API call only.
+
+    Consecutive user messages can arise when an interrupt marker (role="user",
+    system_event set) is stored adjacent to the user's original turn.  Most LLM
+    providers require strictly alternating user/assistant turns.
+
+    This operates on a COPY — the caller's list (used for storage/tracking) is
+    NOT modified so engine.messages stays clean and replay shows correct items.
+    """
+    result: list[ConversationMessage] = []
+    for msg in messages:
+        if result and result[-1].role == "user" and msg.role == "user":
+            prev = result[-1]
+            texts = [
+                b.text for b in list(prev.content) + list(msg.content)
+                if isinstance(b, TextBlock) and b.text.strip()
+            ]
+            non_texts = [
+                b for b in list(prev.content) + list(msg.content)
+                if not isinstance(b, TextBlock)
+            ]
+            merged: list = non_texts + ([TextBlock(text="\n".join(texts))] if texts else [])
+            result[-1] = ConversationMessage(role="user", content=merged)
+        else:
+            result.append(msg)
+    return result
+
+
 PermissionPrompt = Callable[[str, str, "dict[str, Any] | None"], Awaitable[bool]]
 AskUserPrompt = Callable[[str, "list[dict[str, Any]] | None", bool], Awaitable[str]]
 
@@ -775,7 +806,7 @@ async def run_query(
             async for event in context.api_client.stream_message(
                 ApiMessageRequest(
                     model=context.model,
-                    messages=messages,
+                    messages=_merge_consecutive_user_messages_for_api(messages),
                     system_prompt=context.system_prompt,
                     max_tokens=effective_max_tokens,
                     tools=context.tool_registry.to_api_schema(),
