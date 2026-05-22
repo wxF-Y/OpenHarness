@@ -145,15 +145,19 @@ export default function AppLayout() {
   const viewParam = searchParams.get('view') as AppView | null
 
   // Sync route → uiStore on direct URL access (/chat/:id or /?view=xxx)
+  // NOTE: `ui` must NOT be in deps — adding it causes a feedback loop where
+  // setActiveChatSessionId(null) triggers the effect while params.sessionId
+  // still holds the old value, immediately re-setting it.
   useEffect(() => {
-    if (params.sessionId && ui.activeChatSessionId !== params.sessionId) {
-      ui.setActiveChatSessionId(params.sessionId)
-      ui.setActiveView('chat')
+    const { activeChatSessionId, setActiveChatSessionId, setActiveView } = useUiStore.getState()
+    if (params.sessionId && activeChatSessionId !== params.sessionId) {
+      setActiveChatSessionId(params.sessionId)
+      setActiveView('chat')
     }
     if (viewParam && VALID_VIEWS.includes(viewParam)) {
-      ui.setActiveView(viewParam)
+      useUiStore.getState().setActiveView(viewParam)
     }
-  }, [params.sessionId, viewParam, ui])
+  }, [params.sessionId, viewParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleNewSession() {
     setShowCreateModal(true)
@@ -177,6 +181,14 @@ export default function AppLayout() {
     navigate(`/chat/${sessionId}`, { replace: true })
   }
 
+  function handleDeleteSession(sessionId: string) {
+    if (ui.activeChatSessionId === sessionId) {
+      ui.setActiveChatSessionId(null)
+      ui.setActiveView('chat')
+      navigate('/', { replace: true })
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#1e1e2e', overflow: 'hidden' }}>
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
@@ -187,6 +199,7 @@ export default function AppLayout() {
           onViewChange={handleViewChange}
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}
+          onDeleteSession={handleDeleteSession}
           activeChatSessionId={activeSessionId}
           refreshKey={sidebarRefreshKey}
         />

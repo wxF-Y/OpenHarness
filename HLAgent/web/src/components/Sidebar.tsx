@@ -161,6 +161,7 @@ interface Props {
   onViewChange: (view: AppView) => void
   onSelectSession: (sessionId: string) => void
   onNewSession: () => void
+  onDeleteSession?: (sessionId: string) => void
   activeChatSessionId: string | null
   refreshKey?: number
 }
@@ -172,6 +173,7 @@ export default function Sidebar({
   onViewChange,
   onSelectSession,
   onNewSession,
+  onDeleteSession,
   activeChatSessionId,
   refreshKey,
 }: Props) {
@@ -201,6 +203,7 @@ export default function Sidebar({
       const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(`删除失败：${res.status}`)
       setSessions((prev) => prev.filter((s) => s.session_id !== id))
+      onDeleteSession?.(id)
     } catch {
       toast.show('删除会话失败，请重试', 'error', 3000)
     } finally {

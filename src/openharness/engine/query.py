@@ -689,7 +689,6 @@ async def run_query(
 
     compact_state = AutoCompactState()
     reactive_compact_attempted = False
-    messages = list(messages)  # Work on a local copy; never mutate caller's list
     last_compaction_result: tuple[list[ConversationMessage], bool] = (messages, False)
     effective_max_tokens = _bounded_completion_tokens(
         context.max_tokens,

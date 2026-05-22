@@ -16,6 +16,7 @@ from fastapi import APIRouter, File, HTTPException, Path as FPath, UploadFile
 from pydantic import BaseModel, Field
 
 from hlagent_sdk import AgentSessionConfig
+from openharness.services.session_storage import delete_session_snapshot
 from services.session_manager import session_mgr
 
 log = logging.getLogger(__name__)
@@ -220,6 +221,7 @@ async def delete_session(session_id: _SESSION_ID) -> None:
     if entry is None:
         raise HTTPException(404, "Session not found")
     cwd_str = entry.cwd
+    internal_sid = entry.host.get_session_id()
 
     try:
         await entry.host.stop()
@@ -227,6 +229,12 @@ async def delete_session(session_id: _SESSION_ID) -> None:
         log.warning("Error stopping session %s: %s", session_id, exc)
 
     session_mgr.remove(session_id)
+
+    if internal_sid:
+        try:
+            delete_session_snapshot(cwd_str, internal_sid)
+        except Exception as exc:
+            log.warning("Failed to delete session snapshot %s: %s", internal_sid, exc)
 
     if cwd_str:
         cwd_resolved = Path(cwd_str).resolve()

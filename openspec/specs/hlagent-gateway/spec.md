@@ -56,7 +56,7 @@ Gateway SHALL 在 `GET /health` 暴露健康检查端点，返回服务状态和
 Gateway SHALL 提供以下 REST 端点管理 Agent 会话：
 - `POST /api/sessions` — 创建新会话，支持传递 `model`、`cwd`（可选，未传则自动分配托管目录）、`permission_mode`、`system_prompt`、`max_turns` 参数；若 `cwd` 指向不存在路径或非目录，返回 422
 - `GET /api/sessions/{session_id}` — 获取会话当前完整 AppState（含 model、provider、auth_status、cwd、fast_mode、plan_mode 等）
-- `DELETE /api/sessions/{session_id}` — 关闭会话并清理资源；若该会话使用托管 cwd（位于 `~/.hlagent/workspaces/` 下），一并递归删除该目录
+- `DELETE /api/sessions/{session_id}` — 关闭会话并清理资源；若该会话使用托管 cwd（位于 `~/.hlagent/workspaces/` 下），一并递归删除该目录；**同时删除 `~/.openharness/data/sessions/` 下对应的持久化快照文件（`session-<internal-id>.json` 及 `latest.json`（若其指向同一 session））**
 - `GET /api/sessions/{session_id}/commands` — 获取该会话可用的命令列表
 
 #### Scenario: 创建新会话（带参数）
@@ -78,6 +78,14 @@ Gateway SHALL 提供以下 REST 端点管理 Agent 会话：
 #### Scenario: 删除会话不清理用户自定义目录
 - **WHEN** 客户端发送 `DELETE /api/sessions/{id}`，该会话 cwd 为用户指定路径
 - **THEN** 返回 HTTP 204；用户指定的 cwd 目录不受影响
+
+#### Scenario: 删除会话时清理持久化快照文件
+- **WHEN** 客户端发送 `DELETE /api/sessions/{id}`，且 host 已就绪（internal session_id 可获取）
+- **THEN** 返回 HTTP 204；`~/.openharness/data/sessions/` 下对应的 `session-<internal-id>.json` 被删除；若 `latest.json` 指向同一 session，也一并删除
+
+#### Scenario: host 未就绪时删除会话不报错
+- **WHEN** 客户端发送 `DELETE /api/sessions/{id}`，但 host 尚未完成初始化（`get_session_id()` 返回 None）
+- **THEN** 返回 HTTP 204；跳过快照文件删除，不报错
 
 #### Scenario: 获取命令列表
 - **WHEN** 客户端发送 `GET /api/sessions/{session_id}/commands`

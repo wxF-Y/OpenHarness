@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from hashlib import sha1
 from pathlib import Path
@@ -205,6 +206,40 @@ def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | Non
         if data.get("session_id") == session_id or session_id == "latest":
             return data
     return None
+
+
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def delete_session_snapshot(cwd: str | Path | None, session_id: str | None) -> None:
+    """Delete a persisted session snapshot and, if it is the latest, also remove latest.json."""
+    if not cwd or not session_id:
+        return
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        return
+    path = Path(cwd).resolve()
+    digest = sha1(str(path).encode("utf-8")).hexdigest()[:12]
+    session_dir = get_sessions_dir() / f"{path.name}-{digest}"
+    if not session_dir.exists():
+        return
+    snapshot_path = session_dir / f"session-{session_id}.json"
+    try:
+        snapshot_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    latest_path = session_dir / "latest.json"
+    try:
+        if latest_path.exists():
+            data = json.loads(latest_path.read_text(encoding="utf-8"))
+            if data.get("session_id") == session_id:
+                latest_path.unlink(missing_ok=True)
+    except (OSError, json.JSONDecodeError):
+        pass
+    try:
+        if not any(session_dir.iterdir()):
+            session_dir.rmdir()
+    except OSError:
+        pass
 
 
 def export_session_markdown(
