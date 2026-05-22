@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { BackendEvent, FrontendRequest, QuestionOption } from '../types/protocol'
 import { useSessionStore } from '../stores/sessionStore'
 import { useTaskStore } from '../stores/taskStore'
@@ -9,6 +10,7 @@ const MAX_RETRY_DELAY = 30000
 const BASE_RETRY_DELAY = 1000
 
 export function useWebSocket(sessionId: string | null) {
+  const navigate = useNavigate()
   const wsRef = useRef<WebSocket | null>(null)
   const retryDelayRef = useRef(BASE_RETRY_DELAY)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -167,7 +169,13 @@ export function useWebSocket(sessionId: string | null) {
       if (terminatedRef.current) return
       if (wsRef.current !== ws) return  // 此 WS 已被新连接替代，不触发重连
       useSessionStore.getState().setWsStatus('disconnected')
-      if (e.code !== 4004) {
+      if (e.code === 4004) {
+        // Session not found (gateway restarted or session deleted externally).
+        // Clear the active session and return to the welcome screen.
+        useUiStore.getState().setActiveChatSessionId(null)
+        useUiStore.getState().setActiveView('chat')
+        navigate('/', { replace: true })
+      } else {
         retryTimerRef.current = setTimeout(() => {
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, MAX_RETRY_DELAY)
           connect()
@@ -178,7 +186,7 @@ export function useWebSocket(sessionId: string | null) {
     ws.onerror = () => {
       ws.close()
     }
-  }, [sessionId, dispatch]) // sessionId is stable for a given ChatPage mount
+  }, [sessionId, dispatch, navigate]) // sessionId is stable for a given ChatPage mount
 
   useEffect(() => {
     terminatedRef.current = false
