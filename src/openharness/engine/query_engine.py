@@ -18,6 +18,30 @@ from openharness.services.autodream.service import schedule_auto_dream
 from openharness.tools.base import ToolRegistry
 
 
+def _flatten_consecutive_user_messages(messages: list[ConversationMessage]) -> list[ConversationMessage]:
+    """Merge consecutive user-role messages into one.
+
+    Consecutive user messages can arise after an interrupt: the interrupt marker
+    (role="user") is stored adjacent to the user's original turn.  Most LLM
+    providers require strictly alternating user/assistant turns, so we flatten
+    before sending to the API.  The stored engine.messages are not affected —
+    only the query_messages copy that goes to run_query.
+    """
+    result: list[ConversationMessage] = []
+    for msg in messages:
+        if result and result[-1].role == "user" and msg.role == "user":
+            prev = result[-1]
+            texts = [b.text for b in list(prev.content) + list(msg.content)
+                     if isinstance(b, TextBlock) and b.text.strip()]
+            non_texts = [b for b in list(prev.content) + list(msg.content)
+                         if not isinstance(b, TextBlock)]
+            merged_content: list = non_texts + ([TextBlock(text="\n".join(texts))] if texts else [])
+            result[-1] = ConversationMessage(role="user", content=merged_content)
+        else:
+            result.append(msg)
+    return result
+
+
 _EFFORT_TO_THINKING_BUDGET: dict[str, int] = {
     "medium": 8_000,
     "high": 16_000,
@@ -212,7 +236,7 @@ class QueryEngine:
                 getattr(self._settings, "effort", None) if self._settings else None
             ),
         )
-        query_messages = list(self._messages)
+        query_messages = _flatten_consecutive_user_messages(list(self._messages))
         coordinator_context = self._build_coordinator_context_message()
         if coordinator_context is not None:
             query_messages.append(coordinator_context)

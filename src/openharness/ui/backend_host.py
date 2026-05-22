@@ -244,11 +244,10 @@ class ReactBackendHost:
                         "The user manually stopped the previous operation. "
                         "Acknowledge the interruption and wait for new instructions.",
                     )
-                    # Guard: avoid consecutive user messages (Anthropic rejects them).
-                    if sanitized and sanitized[-1].role == "user":
-                        sanitized_with_marker = sanitized
-                    else:
-                        sanitized_with_marker = sanitized + [interrupt_msg]
+                    # Always append the interrupt marker. Consecutive user messages
+                    # are resolved by _flatten_consecutive_user_messages in
+                    # submit_message before the API call.
+                    sanitized_with_marker = sanitized + [interrupt_msg]
                     self._bundle.engine.load_messages(sanitized_with_marker)
                     await asyncio.to_thread(
                         self._bundle.session_backend.save_snapshot,
