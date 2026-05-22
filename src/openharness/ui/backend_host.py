@@ -31,6 +31,10 @@ from openharness.engine.stream_events import (
     ToolExecutionCompleted,
     ToolExecutionStarted,
 )
+from openharness.engine.messages import (
+    ConversationMessage, TextBlock, sanitize_conversation_messages,
+    make_system_event_message,
+)
 from openharness.output_styles import load_output_styles
 from openharness.tasks import get_task_manager
 from openharness.ui.coordinator_drain import drain_coordinator_async_agents
@@ -79,6 +83,7 @@ class ReactBackendHost:
         self._question_requests: dict[str, asyncio.Future[str]] = {}
         # Stores the question text for pending questions so they can be resent after reconnect
         self._question_texts: dict[str, str] = {}
+        self._last_interrupted: bool = False
         self._permission_lock = asyncio.Lock()
         self._busy = False
         self._running = True
@@ -228,6 +233,35 @@ class ReactBackendHost:
                     item=TranscriptItem(role="system", text="Interrupted by user."),
                 )
             )
+            self._last_interrupted = True
+            if self._bundle is not None:
+                try:
+                    # Sanitize messages (strips incomplete tool-call tails) then
+                    # append an interrupt marker so the model sees it on resume.
+                    sanitized = sanitize_conversation_messages(self._bundle.engine.messages)
+                    interrupt_msg = make_system_event_message(
+                        "user_interrupted",
+                        "The user manually stopped the previous operation. "
+                        "Acknowledge the interruption and wait for new instructions.",
+                    )
+                    # Guard: avoid consecutive user messages (Anthropic rejects them).
+                    if sanitized and sanitized[-1].role == "user":
+                        sanitized_with_marker = sanitized
+                    else:
+                        sanitized_with_marker = sanitized + [interrupt_msg]
+                    self._bundle.engine.load_messages(sanitized_with_marker)
+                    await asyncio.to_thread(
+                        self._bundle.session_backend.save_snapshot,
+                        cwd=self._bundle.cwd,
+                        model=self._bundle.engine.model,
+                        system_prompt=self._bundle.engine.system_prompt,
+                        messages=sanitized_with_marker,
+                        usage=self._bundle.engine.total_usage,
+                        session_id=self._bundle.session_id,
+                        tool_metadata=self._bundle.engine.tool_metadata,
+                    )
+                except Exception as save_exc:
+                    log.warning("Failed to save snapshot on interrupt: %s", save_exc)
             await self._emit(self._status_snapshot())
             await self._emit(BackendEvent.tasks_snapshot(get_task_manager().list_tasks()))
             await self._emit(BackendEvent(type="line_complete"))

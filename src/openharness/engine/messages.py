@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any, Annotated, Literal
 from uuid import uuid4
@@ -84,6 +85,7 @@ class ConversationMessage(BaseModel):
 
     role: Literal["user", "assistant"]
     content: list[ContentBlock] = Field(default_factory=list)
+    system_event: str | None = None
 
     @field_validator("content", mode="before")
     @classmethod
@@ -268,3 +270,66 @@ def assistant_message_from_api(raw_message: Any) -> ConversationMessage:
             )
 
     return ConversationMessage(role="assistant", content=content)
+
+
+# ---------------------------------------------------------------------------
+# System event helpers — structured markers injected into conversation history
+# so the model sees operational events as part of its context.
+#
+# Format:  [system_event:<type>] <human-readable detail>
+#
+# Adding a new event type: call make_system_event_message() with a new type
+# string and a descriptive detail.  The replay layer auto-converts any
+# system_event message to a UI "system" transcript item.
+# ---------------------------------------------------------------------------
+
+_SYSTEM_EVENT_PREFIX = "[system_event:"
+_SYSTEM_EVENT_TYPE_RE = re.compile(r"^[a-z_]+$")
+
+# Human-readable UI labels for each event type (shown in the transcript).
+_SYSTEM_EVENT_LABELS: dict[str, str] = {
+    "user_interrupted": "Interrupted by user.",
+}
+
+
+def make_system_event_message(event_type: str, detail: str = "") -> "ConversationMessage":
+    """Build a user-role ConversationMessage carrying a system event marker.
+
+    The message is stored in conversation history so the model receives it as
+    context.  The replay layer converts it to a UI system transcript item.
+    Detection uses the `system_event` metadata field, not the text content,
+    so user-submitted text cannot spoof system events.
+    """
+    body = f"{_SYSTEM_EVENT_PREFIX}{event_type}]"
+    if detail:
+        body = f"{body} {detail}"
+    return ConversationMessage(role="user", content=[TextBlock(text=body)], system_event=event_type)
+
+
+def parse_system_event(message: "ConversationMessage") -> tuple[str, str] | None:
+    """Return (event_type, detail) if the message is a system event, else None.
+
+    Detection is based on the `system_event` metadata field — not on text
+    content — so user messages cannot accidentally or maliciously trigger
+    system event handling.
+    """
+    event_type = getattr(message, "system_event", None)
+    if event_type is None:
+        return None
+    if not _SYSTEM_EVENT_TYPE_RE.fullmatch(event_type):
+        return None
+    # Extract human-readable detail from text content if available.
+    content = getattr(message, "content", [])
+    detail = ""
+    if content and isinstance(content[0], TextBlock):
+        text = content[0].text
+        close = text.find("]", len(_SYSTEM_EVENT_PREFIX))
+        if close != -1:
+            detail = text[close + 1:].strip()
+    return event_type, detail
+
+
+def system_event_ui_label(event_type: str, detail: str = "") -> str:
+    """Return a human-readable label for display in the UI transcript."""
+    return _SYSTEM_EVENT_LABELS.get(event_type, detail or event_type)
+

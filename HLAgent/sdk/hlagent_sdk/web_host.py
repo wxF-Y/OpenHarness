@@ -52,6 +52,7 @@ class WebBackendHost(ReactBackendHost):
         self._ws_input_queue: asyncio.Queue[FrontendRequest | None] = asyncio.Queue()
         self._event_queue: asyncio.Queue[BackendEvent | None] = asyncio.Queue()
         self._run_task: asyncio.Task | None = None  # track the run() task
+        # _last_interrupted is defined on the base class; no redefinition needed.
 
     # ------------------------------------------------------------------ #
     # Public interface for Gateway
@@ -162,6 +163,14 @@ class WebBackendHost(ReactBackendHost):
             return None
         return self._bundle.session_id
 
+    @property
+    def last_interrupted(self) -> bool:
+        """True if the last active request was interrupted by the user."""
+        return self._last_interrupted
+
+    @last_interrupted.setter
+    def last_interrupted(self, value: bool) -> None:
+        self._last_interrupted = value
     def get_session_backend(self):
         """Return the SessionBackend instance (only valid when is_ready=True)."""
         if self._bundle is None:
@@ -196,19 +205,22 @@ class WebBackendHost(ReactBackendHost):
         from openharness.engine.messages import ConversationMessage, TextBlock, ImageBlock, DocumentBlock
 
         assert self._bundle is not None
+        _cancelled = False
         try:
             return await self._process_message_with_attachments_inner(request)
+        except asyncio.CancelledError:
+            _cancelled = True
+            raise
         except Exception as exc:
             log.warning("Unhandled error in _process_message_with_attachments: %s", exc)
             await self._emit(BackendEvent(type="error", message=f"附件处理错误：{exc}"))
             return True
         finally:
-            # Guarantee line_complete is always emitted so the frontend never
-            # stays frozen after an attachment message.
-            # We check whether the inner method already emitted it by looking at
-            # the event queue length — simplest approach is to always emit here
-            # and let the frontend handle duplicate line_complete gracefully.
-            await self._emit(BackendEvent(type="line_complete"))
+            # Only emit line_complete for non-cancel exits.  On CancelledError,
+            # _run_active_request is responsible for emitting line_complete,
+            # preventing the double-emit that would otherwise occur.
+            if not _cancelled:
+                await self._emit(BackendEvent(type="line_complete"))
 
     async def _process_message_with_attachments_inner(self, request: FrontendRequest) -> bool:
         """Inner implementation — called by _process_message_with_attachments."""
@@ -361,6 +373,8 @@ class WebBackendHost(ReactBackendHost):
                 continue
 
             await self._request_queue.put(request)
+            # Clear the interrupt flag once a new user request is submitted
+            self._last_interrupted = False
 
     async def _emit(self, event: BackendEvent) -> None:
         """Put a BackendEvent into the output queue for the Gateway to consume.

@@ -31,6 +31,7 @@ from openharness.engine.messages import (
     ContentBlock,
     ImageBlock,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
 )
@@ -300,6 +301,7 @@ class OpenAICompatibleClient:
         # Collect full response while streaming text deltas
         collected_content = ""
         collected_reasoning = ""
+        collected_thinking = ""
         collected_tool_calls: dict[int, dict[str, Any]] = {}
         finish_reason: str | None = None
         usage_data: dict[str, int] = {}
@@ -327,6 +329,7 @@ class OpenAICompatibleClient:
             reasoning_piece = getattr(delta, "reasoning_content", None) or ""
             if reasoning_piece:
                 collected_reasoning += reasoning_piece
+                collected_thinking += reasoning_piece
                 yield ApiThinkingDeltaEvent(thinking=reasoning_piece)
 
             # Stream text content to user, stripping inline <think> blocks
@@ -334,6 +337,7 @@ class OpenAICompatibleClient:
                 _think_buf += delta.content
                 visible, _think_buf, extracted_thinking = _strip_think_blocks(_think_buf)
                 if extracted_thinking:
+                    collected_thinking += extracted_thinking
                     yield ApiThinkingDeltaEvent(thinking=extracted_thinking)
                 if visible:
                     collected_content += visible
@@ -365,8 +369,14 @@ class OpenAICompatibleClient:
                     "output_tokens": chunk.usage.completion_tokens or 0,
                 }
 
+        # Flush any buffered content that never received a closing </think> tag
+        if _think_buf:
+            collected_content += _think_buf
+
         # Build the final ConversationMessage
         content: list[ContentBlock] = []
+        if collected_thinking:
+            content.append(ThinkingBlock(thinking=collected_thinking))
         if collected_content:
             content.append(TextBlock(text=collected_content))
 

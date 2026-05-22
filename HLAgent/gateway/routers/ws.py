@@ -67,7 +67,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         # Clear the client's local transcript before replaying.
         await websocket.send_json(BackendEvent(type="clear_transcript").model_dump(exclude_none=True))
 
-        # Replay conversation history.
+        # Replay conversation history (interrupt marker, if any, is replayed inside).
         await _replay_transcript(websocket, host)
 
         # Re-send any pending question or permission modals that were drained
@@ -159,6 +159,7 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
         from openharness.ui.protocol import MediaItem, TranscriptItem
         from openharness.engine.messages import (
             DocumentBlock, ImageBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock, TextBlock,
+            parse_system_event, system_event_ui_label,
         )
 
         # Strip both old <document> (legacy) and new <attachment> XML from user text
@@ -211,12 +212,30 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
             if role not in ("user", "assistant"):
                 continue
 
+            # System event marker stored as a user message — display as system transcript item.
+            sys_event = parse_system_event(msg)
+            if sys_event is not None:
+                event_type, detail = sys_event
+                label = system_event_ui_label(event_type, detail)
+                await websocket.send_json(
+                    BackendEvent(
+                        type="transcript_item",
+                        item=TranscriptItem(role="system", text=label),
+                    ).model_dump(exclude_none=True)
+                )
+                continue
+
             text_parts = [
                 block.text for block in content
                 if isinstance(block, TextBlock) and block.text.strip()
             ]
             tool_uses = [block for block in content if isinstance(block, ToolUseBlock)]
             tool_results = [block for block in content if isinstance(block, ToolResultBlock)]
+
+            thinking_parts = [
+                block.thinking for block in content
+                if role == "assistant" and isinstance(block, ThinkingBlock) and block.thinking.strip()
+            ]
 
             if text_parts:
                 raw_text = "\n".join(text_parts)
@@ -227,10 +246,6 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
                     display_text = raw_text
                     media = None
                 if display_text:
-                    thinking_parts = [
-                        block.thinking for block in content
-                        if isinstance(block, ThinkingBlock) and block.thinking.strip()
-                    ]
                     item = TranscriptItem(
                         role=role,
                         text=display_text,
@@ -240,7 +255,16 @@ async def _replay_transcript(websocket: WebSocket, host: object) -> None:
                     await websocket.send_json(
                         BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
                     )
-
+            elif thinking_parts:
+                # Assistant turn with thinking but no text (e.g. before a tool call)
+                item = TranscriptItem(
+                    role=role,
+                    text="",
+                    thinking="\n".join(thinking_parts),
+                )
+                await websocket.send_json(
+                    BackendEvent(type="transcript_item", item=item).model_dump(exclude_none=True)
+                )
 
             for tu in tool_uses:
                 import json as _json
