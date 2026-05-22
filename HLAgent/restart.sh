@@ -80,7 +80,9 @@ restart_gateway() {
 
   echo "[gateway] Starting (port $GATEWAY_PORT)..."
   # 用子 shell 避免污染当前目录
-  (cd "$GATEWAY_DIR" && "$PYTHON" -m uvicorn main:app --host 127.0.0.1 --port $GATEWAY_PORT) \
+  # Unset standard AI provider env vars so the gateway uses settings.json credentials
+  # instead of inheriting shell-level keys that may target different endpoints.
+  (cd "$GATEWAY_DIR" && unset ANTHROPIC_API_KEY OPENAI_API_KEY && "$PYTHON" -m uvicorn main:app --host 127.0.0.1 --port $GATEWAY_PORT) \
     >"$GATEWAY_LOG" 2>&1 &
   echo "  PID $! → log: $GATEWAY_LOG"
 

@@ -15,6 +15,8 @@ class SessionEntry:
     created_at: float = field(default_factory=time.time)
     cwd: str | None = None
     model: str | None = None
+    expert_role: str | None = None
+    expert_role_label: str | None = None
 
 
 class SessionManager:
@@ -28,13 +30,17 @@ class SessionManager:
         session_id = uuid4().hex
         return self.create_with_id(session_id, config)
 
-    def create_with_id(self, session_id: str, config: AgentSessionConfig) -> tuple[str, WebBackendHost]:
+    def create_with_id(self, session_id: str, config: AgentSessionConfig,
+                       expert_role: str | None = None,
+                       expert_role_label: str | None = None) -> tuple[str, WebBackendHost]:
         """Create a new session with a pre-generated session_id."""
         host = create_host(config)
         self._sessions[session_id] = SessionEntry(
             host=host,
             cwd=config.cwd,
             model=config.model,
+            expert_role=expert_role,
+            expert_role_label=expert_role_label,
         )
         return session_id, host
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppView } from '../stores/uiStore'
+import { useUiStore } from '../stores/uiStore'
 import { useToast } from './Toast'
 import type { SessionSummary } from '../types/api'
 
@@ -163,7 +164,6 @@ interface Props {
   onNewSession: () => void
   onDeleteSession?: (sessionId: string) => void
   activeChatSessionId: string | null
-  refreshKey?: number
 }
 
 export default function Sidebar({
@@ -175,9 +175,9 @@ export default function Sidebar({
   onNewSession,
   onDeleteSession,
   activeChatSessionId,
-  refreshKey,
 }: Props) {
   const sessionStore = useSessionStore()
+  const ui = useUiStore()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [sessionsError, setSessionsError] = useState(false)
@@ -203,6 +203,7 @@ export default function Sidebar({
       const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(`删除失败：${res.status}`)
       setSessions((prev) => prev.filter((s) => s.session_id !== id))
+      useUiStore.getState().removeExpertRoleLabel(id)
       onDeleteSession?.(id)
     } catch {
       toast.show('删除会话失败，请重试', 'error', 3000)
@@ -227,9 +228,17 @@ export default function Sidebar({
   useEffect(() => {
     fetch('/api/sessions')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => { setSessions(data); setSessionsLoading(false) })
+      .then((data: SessionSummary[]) => {
+        setSessions(data)
+        setSessionsLoading(false)
+        const labels: Record<string, string> = {}
+        for (const s of data) {
+          if (s.expert_role_label) labels[s.session_id] = s.expert_role_label
+        }
+        useUiStore.getState().setExpertRoleLabels(labels)
+      })
       .catch(() => { setSessionsError(true); setSessionsLoading(false) })
-  }, [refreshKey])
+  }, [ui.sidebarRefreshKey])
 
   function handleNewSession() {
     onNewSession()
@@ -394,22 +403,36 @@ export default function Sidebar({
                   {s.cwd && (() => {
                     if (s.is_managed) {
                       return (
-                        <span
-                          title="此会话使用自动分配的临时工作目录，删除会话时目录内容将被永久清除"
-                          style={{ background: '#313244', color: '#6c7086', fontSize: '0.6rem', borderRadius: 3, padding: '1px 5px', lineHeight: 1.4 }}
-                        >
-                          临时
-                        </span>
+                        <>
+                          <span
+                            title="此会话使用自动分配的临时工作目录，删除会话时目录内容将被永久清除"
+                            style={{ background: '#313244', color: '#6c7086', fontSize: '0.6rem', borderRadius: 3, padding: '1px 5px', lineHeight: 1.4 }}
+                          >
+                            临时
+                          </span>
+                          {s.expert_role_label && (
+                            <span style={{ fontSize: '0.7rem', color: '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                              🎭 {s.expert_role_label}
+                            </span>
+                          )}
+                        </>
                       )
                     }
                     const displayPath = s.cwd.replace(/\\/g, '/')
                     return (
-                      <span
-                        title={displayPath}
-                        style={{ fontSize: '0.65rem', color: '#6c7086', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}
-                      >
-                        📁 {displayPath}
-                      </span>
+                      <>
+                        <span
+                          title={displayPath}
+                          style={{ fontSize: '0.65rem', color: '#6c7086', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}
+                        >
+                          📁 {displayPath}
+                        </span>
+                        {s.expert_role_label && (
+                          <span style={{ fontSize: '0.7rem', color: '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                            🎭 {s.expert_role_label}
+                          </span>
+                        )}
+                      </>
                     )
                   })()}
                 </button>

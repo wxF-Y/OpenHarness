@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import MDRenderer from '../components/MDRenderer'
+import CreateSessionModal from '../components/CreateSessionModal'
 import type { RoleCatalog, RoleDepartment, RoleAgent } from '../types/swarm'
-import { fetchCatalog, fetchRoleContent, startExpertChat } from '../utils/swarmApi'
+import { fetchCatalog, fetchRoleContent } from '../utils/swarmApi'
+import { useUiStore } from '../stores/uiStore'
 
 function Skeleton() {
   return (
@@ -27,8 +29,16 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   )
 }
 
+interface ExpertModalConfig {
+  name: string
+  description: string
+  dept: string
+  rolePrefix: string
+}
+
 export default function ExpertsPage() {
   const navigate = useNavigate()
+  const ui = useUiStore()
   const [catalog, setCatalog] = useState<RoleCatalog | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +49,7 @@ export default function ExpertsPage() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [busyPath, setBusyPath] = useState<string | null>(null)
   const [chatError, setChatError] = useState<string | null>(null)
+  const [expertModalConfig, setExpertModalConfig] = useState<ExpertModalConfig | null>(null)
   const previewGenRef = useRef(0)
 
   useEffect(() => {
@@ -72,12 +83,31 @@ export default function ExpertsPage() {
     setChatError(null)
     setBusyPath(role.path)
     try {
-      const roleContent = content ?? await fetchRoleContent(role.path)
-      await startExpertChat(roleContent, navigate)
+      const roleContent = content ?? (
+        previewRole?.role.path === role.path && previewContent
+          ? previewContent
+          : await fetchRoleContent(role.path)
+      )
+      setBusyPath(null)
+      const deptLabel = catalog?.departments.find(
+        (d) => d.agents.some((a) => a.path === role.path)
+      )?.label ?? ''
+      setExpertModalConfig({
+        name: role.name,
+        description: role.description,
+        dept: deptLabel,
+        rolePrefix: roleContent,
+      })
     } catch (e) {
       setBusyPath(null)
-      setChatError(e instanceof Error ? e.message : '启动对话失败，请重试')
+      setChatError(e instanceof Error ? e.message : '加载专家内容失败，请重试')
     }
+  }
+
+  function handleExpertCreated(sessionId: string) {
+    setExpertModalConfig(null)
+    ui.incrementSidebarRefreshKey()
+    navigate(`/chat/${sessionId}`)
   }
 
   function retry() {
@@ -114,7 +144,7 @@ export default function ExpertsPage() {
       {/* Header */}
       <div style={{ height: '44px', display: 'flex', alignItems: 'center', padding: '0 1rem', gap: '0.75rem', borderBottom: '1px solid #313244', backgroundColor: '#181825', flexShrink: 0 }}>
         <span style={{ color: '#cba6f7', fontWeight: 700, fontSize: '0.9375rem' }}>🎭 专家库</span>
-        <span style={{ color: '#6c7086', fontSize: '0.8125rem' }}>选择专家直接开始对话</span>
+        <span style={{ color: '#6c7086', fontSize: '0.8125rem' }}>选择专家，配置并开始对话</span>
       </div>
 
       {/* Error toast */}
@@ -233,7 +263,7 @@ export default function ExpertsPage() {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#6c7086', fontSize: '0.875rem', gap: '0.75rem' }}>
                   <div style={{ fontSize: '2rem' }}>🎭</div>
                   <div>点击专家名称预览详情</div>
-                  <div style={{ fontSize: '0.75rem' }}>或直接点击"对话 →"立即开始</div>
+                  <div style={{ fontSize: '0.75rem' }}>或点击「对话 →」配置工作目录后开始</div>
                 </div>
               )}
               {previewRole && (
@@ -264,6 +294,15 @@ export default function ExpertsPage() {
           </>
         )}
       </div>
+
+      {/* Expert modal */}
+      {expertModalConfig && (
+        <CreateSessionModal
+          expertRole={expertModalConfig}
+          onCreated={handleExpertCreated}
+          onClose={() => setExpertModalConfig(null)}
+        />
+      )}
     </div>
   )
 }

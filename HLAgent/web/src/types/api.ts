@@ -11,4 +11,6 @@ export interface SessionSummary {
   ready: boolean
   created_at: number
   title?: string
+  expert_role?: string | null
+  expert_role_label?: string | null
 }

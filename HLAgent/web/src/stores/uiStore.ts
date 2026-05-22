@@ -28,12 +28,19 @@ interface UiState {
   errorToasts: ErrorToast[]
   activeView: AppView
   activeChatSessionId: string | null
+  sidebarRefreshKey: number
+  expertRoleLabels: Record<string, string>
   setActiveModal: (modal: ActiveModal) => void
   setCompactPhase: (phase: string | null) => void
   addErrorToast: (message: string, type?: 'error' | 'warning' | 'info') => void
   removeErrorToast: (id: string) => void
   setActiveView: (view: AppView) => void
   setActiveChatSessionId: (id: string | null) => void
+  incrementSidebarRefreshKey: () => void
+  /** Full replacement — use after a complete session list fetch */
+  setExpertRoleLabels: (labels: Record<string, string>) => void
+  /** Remove a single session's label (used on session delete) */
+  removeExpertRoleLabel: (sessionId: string) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -42,6 +49,8 @@ export const useUiStore = create<UiState>((set) => ({
   errorToasts: [],
   activeView: 'chat',
   activeChatSessionId: null,
+  sidebarRefreshKey: 0,
+  expertRoleLabels: {},
 
   setActiveModal: (activeModal) => set({ activeModal }),
   setCompactPhase: (compactPhase) => set({ compactPhase }),
@@ -56,4 +65,13 @@ export const useUiStore = create<UiState>((set) => ({
     set((prev) => ({ errorToasts: prev.errorToasts.filter((t) => t.id !== id) })),
   setActiveView: (activeView) => set({ activeView }),
   setActiveChatSessionId: (activeChatSessionId) => set({ activeChatSessionId }),
+  incrementSidebarRefreshKey: () => set((prev) => ({ sidebarRefreshKey: prev.sidebarRefreshKey + 1 })),
+  setExpertRoleLabels: (expertRoleLabels) => set({ expertRoleLabels }),
+  removeExpertRoleLabel: (sessionId) =>
+    set((prev) => {
+      if (!(sessionId in prev.expertRoleLabels)) return prev
+      const next = { ...prev.expertRoleLabels }
+      delete next[sessionId]
+      return { expertRoleLabels: next }
+    }),
 }))

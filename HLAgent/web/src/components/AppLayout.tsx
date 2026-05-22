@@ -64,6 +64,7 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
   const store = useSessionStore()
   const ui = useUiStore()
   const [showSettings, setShowSettings] = useState(false)
+  const expertLabel = ui.expertRoleLabels[sessionId]
 
   useEffect(() => {
     const s = useSessionStore.getState()
@@ -81,6 +82,21 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
         <span style={{ fontSize: '0.8125rem', color: '#a6adc8' }}>
           {store.appState?.model || 'HLAgent'} · {sessionId.slice(-4)}
         </span>
+        {expertLabel && (
+          <span style={{
+            background: '#313244',
+            color: '#cba6f7',
+            borderRadius: '4px',
+            padding: '0.1rem 0.4rem',
+            fontSize: '0.7rem',
+            whiteSpace: 'nowrap',
+            maxWidth: '160px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            🎭 {expertLabel}
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: store.wsStatus === 'ready' ? '#a6e3a1' : store.wsStatus === 'terminated' ? '#6c7086' : '#f9e2af' }}>
           {store.wsStatus === 'ready' ? '● 已连接' : store.wsStatus === 'connecting' ? '⟳ 连接中' : store.wsStatus === 'terminated' ? '● 已结束' : '● 已断开'}
         </span>
@@ -138,7 +154,6 @@ export default function AppLayout() {
   const [searchParams] = useSearchParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0)
 
   const activeSessionId = ui.activeChatSessionId
   const { sendRequest } = useWebSocket(activeSessionId)
@@ -168,7 +183,7 @@ export default function AppLayout() {
     ui.setActiveChatSessionId(sessionId)
     ui.setActiveView('chat')
     navigate(`/chat/${sessionId}`, { replace: true })
-    setSidebarRefreshKey((k) => k + 1)
+    ui.incrementSidebarRefreshKey()
   }
 
   function handleViewChange(view: AppView) {
@@ -201,7 +216,6 @@ export default function AppLayout() {
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
           activeChatSessionId={activeSessionId}
-          refreshKey={sidebarRefreshKey}
         />
 
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>

@@ -61,6 +61,8 @@ class SessionSummary(BaseModel):
     ready: bool
     created_at: float
     title: str = ""
+    expert_role: str | None = None
+    expert_role_label: str | None = None
 
 
 class CreateSessionRequest(BaseModel):
@@ -72,7 +74,9 @@ class CreateSessionRequest(BaseModel):
     api_key: str | None = None
     api_format: str | None = None
     active_profile: str | None = None
-    role_prefix: str | None = Field(None, max_length=5000)
+    role_prefix: str | None = Field(None, max_length=50000)
+    expert_role: str | None = Field(None, max_length=100)
+    expert_role_label: str | None = Field(None, max_length=100)
 
 
 @router.get("")
@@ -115,6 +119,8 @@ async def list_sessions() -> list[SessionSummary]:
             ready=entry.host.is_ready,
             created_at=entry.created_at,
             title=title,
+            expert_role=entry.expert_role,
+            expert_role_label=entry.expert_role_label,
         ))
     # Most recent sessions first
     return list(reversed(results))
@@ -192,7 +198,9 @@ async def create_session(req: CreateSessionRequest) -> SessionSummary:
         api_format=req.api_format,
         active_profile=req.active_profile,
     )
-    session_mgr.create_with_id(session_id, config)
+    session_mgr.create_with_id(session_id, config,
+                               expert_role=req.expert_role,
+                               expert_role_label=req.expert_role_label)
     entry = session_mgr.get_entry(session_id)
     return SessionSummary(
         session_id=session_id,
@@ -201,6 +209,8 @@ async def create_session(req: CreateSessionRequest) -> SessionSummary:
         is_managed=req.cwd is None,
         ready=False,
         created_at=entry.created_at if entry else 0.0,
+        expert_role=req.expert_role,
+        expert_role_label=req.expert_role_label,
     )
 
 
