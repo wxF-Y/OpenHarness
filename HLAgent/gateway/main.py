@@ -21,6 +21,7 @@ _hlagent_home = Path(os.environ.get("HLAGENT_CONFIG_DIR", Path.home() / ".hlagen
 os.environ["OPENHARNESS_CONFIG_DIR"] = str(_hlagent_home)
 os.environ["OPENHARNESS_DATA_DIR"] = str(_hlagent_home / "data")
 os.environ["OPENHARNESS_LOGS_DIR"] = str(_hlagent_home / "logs")
+os.environ["OPENHARNESS_PROJECT_DIR_NAME"] = ".hlagent"
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -2,17 +2,36 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
 import re
+import shutil
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+
+from fastapi import APIRouter, File, HTTPException, Path as FPath, UploadFile
 from pydantic import BaseModel, Field
-from typing import Literal
 
 from hlagent_sdk import AgentSessionConfig
 from services.session_manager import session_mgr
+
+log = logging.getLogger(__name__)
+
+_workspaces_root = (Path(os.environ.get("OPENHARNESS_CONFIG_DIR", Path.home() / ".hlagent")) / "workspaces").resolve()
+
+_SESSION_ID = Annotated[str, FPath(pattern=r"^[0-9a-f]{32}$", description="32-character hex session ID")]
+
+
+def _is_managed(cwd: str | None) -> bool:
+    if not cwd:
+        return False
+    try:
+        return Path(cwd).resolve().is_relative_to(_workspaces_root)
+    except Exception:
+        return False
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -37,6 +56,7 @@ class SessionSummary(BaseModel):
     session_id: str
     model: str
     cwd: str
+    is_managed: bool = False
     ready: bool
     created_at: float
     title: str = ""
@@ -90,6 +110,7 @@ async def list_sessions() -> list[SessionSummary]:
             session_id=session_id,
             model=state.model if state else (entry.model or ""),
             cwd=state.cwd if state else (entry.cwd or ""),
+            is_managed=_is_managed(entry.cwd),
             ready=entry.host.is_ready,
             created_at=entry.created_at,
             title=title,
@@ -141,12 +162,28 @@ Carefully consider the reversibility and blast radius of actions. Freely take lo
 
 @router.post("", status_code=201)
 async def create_session(req: CreateSessionRequest) -> SessionSummary:
+    session_id = uuid.uuid4().hex
+
+    if req.cwd is not None:
+        cwd_path = Path(req.cwd).expanduser().resolve()
+        def _check_cwd() -> bool:
+            return cwd_path.exists() and cwd_path.is_dir()
+        if not await asyncio.to_thread(_check_cwd):
+            raise HTTPException(status_code=422, detail=f"工作目录不存在或不是目录: {req.cwd}")
+        actual_cwd = str(cwd_path)
+    else:
+        managed_path = _workspaces_root / session_id
+        try:
+            await asyncio.to_thread(managed_path.mkdir, parents=True, exist_ok=True)
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"无法创建工作目录: {exc}") from exc
+        actual_cwd = str(managed_path)
+
     base_sp = req.system_prompt if req.system_prompt is not None else HLAGENT_SYSTEM_PROMPT
-    # role_prefix appended after the base system prompt so it cannot override safety instructions
     full_sp = f"{base_sp}\n\n# Role Definition\n{req.role_prefix.strip()}" if req.role_prefix else base_sp
     config = AgentSessionConfig(
         model=req.model,
-        cwd=req.cwd,
+        cwd=actual_cwd,
         permission_mode=req.permission_mode,
         system_prompt=full_sp,
         max_turns=req.max_turns,
@@ -154,19 +191,20 @@ async def create_session(req: CreateSessionRequest) -> SessionSummary:
         api_format=req.api_format,
         active_profile=req.active_profile,
     )
-    session_id, _ = session_mgr.create(config)
+    session_mgr.create_with_id(session_id, config)
     entry = session_mgr.get_entry(session_id)
     return SessionSummary(
         session_id=session_id,
         model=req.model or "",
-        cwd=req.cwd or "",
+        cwd=entry.cwd or actual_cwd if entry else actual_cwd,
+        is_managed=req.cwd is None,
         ready=False,
         created_at=entry.created_at if entry else 0.0,
     )
 
 
 @router.get("/{session_id}")
-async def get_session(session_id: str) -> dict[str, Any]:
+async def get_session(session_id: _SESSION_ID) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -177,16 +215,33 @@ async def get_session(session_id: str) -> dict[str, Any]:
 
 
 @router.delete("/{session_id}", status_code=204)
-async def delete_session(session_id: str) -> None:
-    host = session_mgr.get(session_id)
-    if host is None:
+async def delete_session(session_id: _SESSION_ID) -> None:
+    entry = session_mgr.get_entry(session_id)
+    if entry is None:
         raise HTTPException(404, "Session not found")
-    await host.stop()
+    cwd_str = entry.cwd
+
+    try:
+        await entry.host.stop()
+    except Exception as exc:
+        log.warning("Error stopping session %s: %s", session_id, exc)
+
     session_mgr.remove(session_id)
+
+    if cwd_str:
+        cwd_resolved = Path(cwd_str).resolve()
+        workspaces_resolved = _workspaces_root.resolve()
+        if cwd_resolved.is_relative_to(workspaces_resolved):
+            try:
+                await asyncio.to_thread(shutil.rmtree, str(cwd_resolved), True)
+            except Exception as exc:
+                log.warning("Failed to remove managed workspace %s: %s", cwd_resolved, exc)
+        else:
+            log.debug("Skipping rmtree: %s not under workspaces root", cwd_str)
 
 
 @router.get("/{session_id}/commands")
-async def get_commands(session_id: str) -> dict[str, Any]:
+async def get_commands(session_id: _SESSION_ID) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -196,7 +251,7 @@ async def get_commands(session_id: str) -> dict[str, Any]:
 
 
 @router.get("/{session_id}/context")
-async def get_context(session_id: str) -> dict[str, Any]:
+async def get_context(session_id: _SESSION_ID) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -206,7 +261,7 @@ async def get_context(session_id: str) -> dict[str, Any]:
 
 
 @router.get("/{session_id}/summary")
-async def get_summary(session_id: str, max_messages: int = 8) -> dict[str, Any]:
+async def get_summary(session_id: _SESSION_ID, max_messages: int = 8) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -218,7 +273,7 @@ async def get_summary(session_id: str, max_messages: int = 8) -> dict[str, Any]:
 
 
 @router.get("/{session_id}/transcript")
-async def get_transcript(session_id: str, format: str = "markdown") -> dict[str, Any]:
+async def get_transcript(session_id: _SESSION_ID, format: str = "markdown") -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -237,7 +292,7 @@ async def get_transcript(session_id: str, format: str = "markdown") -> dict[str,
 
 
 @router.delete("/{session_id}/messages/last")
-async def rewind(session_id: str) -> dict[str, Any]:
+async def rewind(session_id: _SESSION_ID) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -253,7 +308,7 @@ class TagRequest(BaseModel):
 
 
 @router.post("/{session_id}/tag", status_code=201)
-async def tag_session(session_id: str, req: TagRequest) -> dict[str, Any]:
+async def tag_session(session_id: _SESSION_ID, req: TagRequest) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -266,7 +321,7 @@ async def tag_session(session_id: str, req: TagRequest) -> dict[str, Any]:
 
 
 @router.get("/{session_id}/permission-mode")
-async def get_permission_mode(session_id: str) -> dict[str, Any]:
+async def get_permission_mode(session_id: _SESSION_ID) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")
@@ -282,7 +337,7 @@ class SetPermissionModeRequest(BaseModel):
 
 
 @router.post("/{session_id}/permission-mode")
-async def set_permission_mode(session_id: str, req: SetPermissionModeRequest) -> dict[str, Any]:
+async def set_permission_mode(session_id: _SESSION_ID, req: SetPermissionModeRequest) -> dict[str, Any]:
     host = session_mgr.get(session_id)
     if host is None:
         raise HTTPException(404, "Session not found")

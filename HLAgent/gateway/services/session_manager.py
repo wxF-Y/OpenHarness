@@ -26,6 +26,10 @@ class SessionManager:
     def create(self, config: AgentSessionConfig) -> tuple[str, WebBackendHost]:
         """Create a new session, returning (session_id, host). Host is NOT started yet."""
         session_id = uuid4().hex
+        return self.create_with_id(session_id, config)
+
+    def create_with_id(self, session_id: str, config: AgentSessionConfig) -> tuple[str, WebBackendHost]:
+        """Create a new session with a pre-generated session_id."""
         host = create_host(config)
         self._sessions[session_id] = SessionEntry(
             host=host,

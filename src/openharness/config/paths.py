@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 _DEFAULT_BASE_DIR = ".openharness"
+_DEFAULT_PROJECT_DIR = ".openharness"
 _CONFIG_FILE_NAME = "settings.json"
 
 
@@ -100,8 +101,14 @@ def get_cron_registry_path() -> Path:
 
 
 def get_project_config_dir(cwd: str | Path) -> Path:
-    """Return the per-project .openharness directory."""
-    project_dir = Path(cwd).resolve() / ".openharness"
+    """Return the per-project configuration directory.
+
+    The directory name defaults to ``.openharness`` but can be overridden via
+    the ``OPENHARNESS_PROJECT_DIR_NAME`` environment variable (e.g. set to
+    ``.hlagent`` by HLAgent's main.py to keep naming consistent).
+    """
+    dir_name = os.environ.get("OPENHARNESS_PROJECT_DIR_NAME", _DEFAULT_PROJECT_DIR)
+    project_dir = Path(cwd).resolve() / dir_name
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir
 

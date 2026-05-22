@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AppView } from '../stores/uiStore'
 import { useToast } from './Toast'
-
-interface SessionSummary {
-  session_id: string
-  model?: string
-  cwd?: string
-  ready?: boolean
-  created_at?: number
-  title?: string
-}
+import type { SessionSummary } from '../types/api'
 
 function relativeTime(ts: number): string {
   const diff = Date.now() / 1000 - ts
@@ -168,8 +160,9 @@ interface Props {
   activeView: AppView
   onViewChange: (view: AppView) => void
   onSelectSession: (sessionId: string) => void
-  onNewSession: () => Promise<unknown>
+  onNewSession: () => void
   activeChatSessionId: string | null
+  refreshKey?: number
 }
 
 export default function Sidebar({
@@ -180,13 +173,14 @@ export default function Sidebar({
   onSelectSession,
   onNewSession,
   activeChatSessionId,
+  refreshKey,
 }: Props) {
   const sessionStore = useSessionStore()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [sessionsError, setSessionsError] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [newSessionId, setNewSessionId] = useState<string | null>(null)
+  const [creating] = useState(false)
+  const [newSessionId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null)
@@ -232,21 +226,10 @@ export default function Sidebar({
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => { setSessions(data); setSessionsLoading(false) })
       .catch(() => { setSessionsError(true); setSessionsLoading(false) })
-  }, [])
+  }, [refreshKey])
 
-  async function handleNewSession() {
-    setCreating(true)
-    try {
-      const body = await onNewSession() as SessionSummary
-      const sid = body?.session_id
-      if (sid) {
-        setSessions((prev) => [body, ...prev])
-        setNewSessionId(sid)
-        setTimeout(() => setNewSessionId(null), 1200)
-      }
-    } finally {
-      setCreating(false)
-    }
+  function handleNewSession() {
+    onNewSession()
   }
 
   // Collapsed icon-only sidebar
@@ -393,16 +376,39 @@ export default function Sidebar({
                     background: 'none',
                     border: 'none',
                     color: isActive ? '#cdd6f4' : isHovered ? '#cdd6f4' : '#7f849c',
-                    padding: '0.2rem 0.25rem 0.2rem calc(1rem - 2px)',
+                    padding: '0.15rem 0.25rem 0.15rem calc(1rem - 2px)',
                     cursor: 'pointer',
-                    fontSize: '0.72rem',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
                     minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: '1px',
                   }}
                 >
-                  {sessionLabel(s, i)}
+                  <span style={{ fontSize: '0.72rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                    {sessionLabel(s, i)}
+                  </span>
+                  {s.cwd && (() => {
+                    if (s.is_managed) {
+                      return (
+                        <span
+                          title="此会话使用自动分配的临时工作目录，删除会话时目录内容将被永久清除"
+                          style={{ background: '#313244', color: '#6c7086', fontSize: '0.6rem', borderRadius: 3, padding: '1px 5px', lineHeight: 1.4 }}
+                        >
+                          临时
+                        </span>
+                      )
+                    }
+                    const displayPath = s.cwd.replace(/\\/g, '/')
+                    return (
+                      <span
+                        title={displayPath}
+                        style={{ fontSize: '0.65rem', color: '#6c7086', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}
+                      >
+                        📁 {displayPath}
+                      </span>
+                    )
+                  })()}
                 </button>
                 <button
                   onClick={(e) => requestDeleteSession(e, s.session_id)}
@@ -465,29 +471,43 @@ export default function Sidebar({
           onClick={() => setConfirmDeleteId(null)}
           style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(17,17,27,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: '#181825', border: '1px solid #313244', borderRadius: 10, padding: '1.25rem 1.5rem', width: 280, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
-          >
-            <div style={{ fontSize: '1rem', fontWeight: 700, color: '#cdd6f4', marginBottom: '0.5rem' }}>删除会话</div>
-            <div style={{ fontSize: '0.8125rem', color: '#6c7086', marginBottom: '1.25rem' }}>
-              确定删除该会话？此操作不可撤销。
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                style={{ background: '#313244', border: 'none', borderRadius: 6, color: '#cdd6f4', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', cursor: 'pointer' }}
+          {(() => {
+            const targetSession = sessions.find((s) => s.session_id === confirmDeleteId)
+            const isManaged = targetSession?.is_managed === true
+            return (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  background: '#181825',
+                  border: isManaged ? '1px solid rgba(243,139,168,0.5)' : '1px solid #313244',
+                  borderRadius: 10, padding: '1.25rem 1.5rem', width: 300, boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                }}
               >
-                取消
-              </button>
-              <button
-                onClick={confirmDelete}
-                style={{ background: '#f38ba8', border: 'none', borderRadius: 6, color: '#1e1e2e', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
-              >
-                删除
-              </button>
-            </div>
-          </div>
+                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#cdd6f4', marginBottom: '0.5rem' }}>
+                  {isManaged ? '⚠️ 删除会话' : '删除会话'}
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: isManaged ? '#f38ba8' : '#6c7086', marginBottom: '1.25rem' }}>
+                  {isManaged
+                    ? '此会话使用临时工作目录，删除后该目录内所有文件将被永久清除，无法恢复。'
+                    : '确定删除该会话？此操作不可撤销。'}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setConfirmDeleteId(null)}
+                    style={{ background: '#313244', border: 'none', borderRadius: 6, color: '#cdd6f4', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', cursor: 'pointer' }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    style={{ background: '#f38ba8', border: 'none', borderRadius: 6, color: '#1e1e2e', padding: '0.4rem 0.9rem', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>

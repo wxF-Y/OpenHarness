@@ -20,6 +20,7 @@ import SwarmPage from '../pages/SwarmPage'
 import AutopilotPage from '../pages/AutopilotPage'
 import PermissionsPage from '../pages/PermissionsPage'
 import SettingsDrawer from './SettingsDrawer'
+import CreateSessionModal from './CreateSessionModal'
 
 const FEATURES = [
   { icon: '🧠', label: '持久记忆', desc: '项目知识跨会话保存' },
@@ -28,17 +29,6 @@ const FEATURES = [
 ]
 
 function WelcomeView({ onStart }: { onStart: () => void }) {
-  const [creating, setCreating] = useState(false)
-
-  async function handleStart() {
-    setCreating(true)
-    try {
-      await onStart()
-    } finally {
-      setCreating(false)
-    }
-  }
-
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e1e2e', padding: '2rem' }}>
       <div style={{ width: '100%', maxWidth: '480px', textAlign: 'center' }}>
@@ -46,11 +36,10 @@ function WelcomeView({ onStart }: { onStart: () => void }) {
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#89b4fa', margin: '0 0 0.4rem' }}>HLAgent</h1>
         <p style={{ color: '#6c7086', margin: '0 0 2rem', fontSize: '0.875rem' }}>AI 编程助手，开箱即用</p>
         <button
-          onClick={handleStart}
-          disabled={creating}
-          style={{ width: '100%', backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '8px', padding: '0.75rem', fontSize: '1rem', fontWeight: 600, cursor: creating ? 'not-allowed' : 'pointer', opacity: creating ? 0.7 : 1, marginBottom: '2.5rem' }}
+          onClick={onStart}
+          style={{ width: '100%', backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '8px', padding: '0.75rem', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', marginBottom: '2.5rem' }}
         >
-          {creating ? '创建中…' : '开始新对话 →'}
+          开始新对话 →
         </button>
         <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
           {FEATURES.map((f) => (
@@ -148,6 +137,8 @@ export default function AppLayout() {
   const params = useParams<{ sessionId?: string }>()
   const [searchParams] = useSearchParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0)
 
   const activeSessionId = ui.activeChatSessionId
   const { sendRequest } = useWebSocket(activeSessionId)
@@ -164,19 +155,16 @@ export default function AppLayout() {
     }
   }, [params.sessionId, viewParam, ui])
 
-  async function createAndOpenSession() {
-    const r = await fetch('/api/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    if (!r.ok) throw new Error('创建会话失败')
-    const body = await r.json()
-    const sid = body.session_id
-    ui.setActiveChatSessionId(sid)
+  function handleNewSession() {
+    setShowCreateModal(true)
+  }
+
+  function handleSessionCreated(sessionId: string) {
+    setShowCreateModal(false)
+    ui.setActiveChatSessionId(sessionId)
     ui.setActiveView('chat')
-    navigate(`/chat/${sid}`, { replace: true })
-    return body
+    navigate(`/chat/${sessionId}`, { replace: true })
+    setSidebarRefreshKey((k) => k + 1)
   }
 
   function handleViewChange(view: AppView) {
@@ -198,8 +186,9 @@ export default function AppLayout() {
           activeView={ui.activeView}
           onViewChange={handleViewChange}
           onSelectSession={handleSelectSession}
-          onNewSession={createAndOpenSession}
+          onNewSession={handleNewSession}
           activeChatSessionId={activeSessionId}
+          refreshKey={sidebarRefreshKey}
         />
 
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -207,7 +196,7 @@ export default function AppLayout() {
           <div style={{ display: ui.activeView === 'chat' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
             {activeSessionId
               ? <ChatView sessionId={activeSessionId} sendRequest={sendRequest} />
-              : <WelcomeView onStart={createAndOpenSession} />
+              : <WelcomeView onStart={handleNewSession} />
             }
           </div>
 
@@ -270,6 +259,12 @@ export default function AppLayout() {
         />
       )}
       <ErrorToastContainer />
+      {showCreateModal && (
+        <CreateSessionModal
+          onCreated={handleSessionCreated}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
     </div>
   )
 }

@@ -32,11 +32,6 @@ export default function ThinkingBlock({ thinking, streaming = false }: Props) {
 
   if (!thinking && !streaming) return null
 
-  const charCount = thinking.length
-  const lines = thinking.split('\n')
-  const previewText = lines.slice(0, 2).join(' ').slice(0, 100)
-  const hasMore = charCount > 100 || lines.length > 2
-
   return (
     <div
       style={{

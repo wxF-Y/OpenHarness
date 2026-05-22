@@ -42,7 +42,8 @@ def get_user_plugins_dir() -> Path:
 
 def get_project_plugins_dir(cwd: str | Path) -> Path:
     """Return the project plugin directory."""
-    path = Path(cwd).resolve() / ".openharness" / "plugins"
+    from openharness.config.paths import get_project_config_dir
+    path = get_project_config_dir(cwd) / "plugins"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

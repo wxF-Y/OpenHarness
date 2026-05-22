@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { MediaItem, TranscriptItem } from '../types/protocol'
 import MDRenderer from './MDRenderer'
 import ToolCallCard from './ToolCallCard'
-import ImageGrid from './ImageGrid'
 import ImageLightbox from './ImageLightbox'
 import ThinkingBlock from './ThinkingBlock'
 
