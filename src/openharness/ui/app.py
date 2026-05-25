@@ -11,9 +11,7 @@ from openharness.coordinator.coordinator_mode import is_coordinator_mode
 
 from openharness.api.client import SupportsStreamingMessages
 from openharness.engine.stream_events import StreamEvent
-from openharness.ui.backend_host import run_backend_host
 from openharness.ui.coordinator_drain import drain_coordinator_async_agents
-from openharness.ui.react_launcher import launch_react_tui
 from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
 
 
@@ -86,37 +84,13 @@ async def run_repl(
     restore_tool_metadata: dict[str, object] | None = None,
     permission_mode: str | None = None,
 ) -> None:
-    """Run the default OpenHarness interactive application (React TUI)."""
-    if backend_only:
-        await run_backend_host(
-            cwd=cwd,
-            model=model,
-            max_turns=max_turns,
-            base_url=base_url,
-            system_prompt=system_prompt,
-            api_key=api_key,
-            api_format=api_format,
-            api_client=api_client,
-            restore_messages=restore_messages,
-            restore_tool_metadata=restore_tool_metadata,
-            enforce_max_turns=max_turns is not None,
-            permission_mode=permission_mode,
-        )
-        return
-
-    exit_code = await launch_react_tui(
-        prompt=prompt,
-        cwd=cwd,
-        model=model,
-        max_turns=max_turns,
-        base_url=base_url,
-        system_prompt=system_prompt,
-        api_key=api_key,
-        api_format=api_format,
-        permission_mode=permission_mode,
+    """Run the interactive session via the HLAgent web interface."""
+    print(
+        "The terminal TUI has been removed. "
+        "Use the HLAgent web interface (`oh serve`) for interactive sessions.",
+        file=sys.stderr,
     )
-    if exit_code != 0:
-        raise SystemExit(exit_code)
+    raise SystemExit(1)
 
 
 async def run_task_worker(

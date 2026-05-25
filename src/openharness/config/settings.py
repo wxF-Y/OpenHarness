@@ -29,6 +29,12 @@ from openharness.utils.fs import atomic_write_text
 _ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 
+def _config_file_path_hint() -> str:
+    """Return the actual settings file path for use in error messages."""
+    config_dir = os.environ.get("OPENHARNESS_CONFIG_DIR", str(Path.home() / ".openharness"))
+    return str(Path(config_dir) / "settings.json")
+
+
 def strip_ansi_escape_sequences(text: str) -> str:
     """Remove ANSI escape sequences from text.
 
@@ -554,7 +560,11 @@ class Settings(BaseModel):
     allow_project_plugins: bool = False
     allow_project_skills: bool = True
     project_skill_dirs: list[str] = Field(
-        default_factory=lambda: [".openharness/skills", ".agents/skills", ".claude/skills"]
+        default_factory=lambda: [
+            f"{os.environ.get('OPENHARNESS_PROJECT_DIR_NAME', '.openharness')}/skills",
+            ".agents/skills",
+            ".claude/skills",
+        ]
     )
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
@@ -720,7 +730,7 @@ class Settings(BaseModel):
         raise ValueError(
             "No API key found. Set ANTHROPIC_API_KEY (or OPENAI_API_KEY for openai-format "
             "providers) environment variable, or configure api_key in "
-            "~/.openharness/settings.json"
+            f"{_config_file_path_hint()}"
         )
 
     def resolve_auth(self) -> ResolvedAuth:

@@ -166,20 +166,7 @@ def _normalize_feishu_group_policy(value: str | None) -> str:
 
 
 def _is_ohmo_managed_feishu_group(chat_id: str) -> bool:
-    workspace = os.environ.get("OHMO_WORKSPACE")
-    if not workspace:
-        return False
-    try:
-        from ohmo.group_registry import load_managed_group_record
-
-        return load_managed_group_record(
-            workspace=workspace,
-            channel="feishu",
-            chat_id=chat_id,
-        ) is not None
-    except Exception:
-        logger.exception("Failed to load ohmo managed Feishu group metadata chat_id=%s", chat_id)
-        return False
+    return False
 
 
 def _should_process_feishu_group_message(

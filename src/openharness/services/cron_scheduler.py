@@ -31,8 +31,8 @@ from openharness.sandbox import SandboxUnavailableError
 from openharness.utils.shell import create_shell_subprocess
 
 try:
-    from ohmo.gateway.config import load_gateway_config
-except Exception:  # pragma: no cover - ohmo is optional for non-ohmo cron users
+    from ohmo.gateway.config import load_gateway_config  # type: ignore[import]
+except Exception:
     load_gateway_config = None  # type: ignore[assignment]
 
 
@@ -259,19 +259,7 @@ async def _notify_job_result(job: dict[str, Any], entry: dict[str, Any]) -> None
     notify_type = str(notify.get("type") or "").strip().lower()
     try:
         if notify_type in {"feishu_dm", "feishu"}:
-            from ohmo.gateway.notify import send_feishu_dm
-
-            user_open_id = str(
-                notify.get("user_open_id") or notify.get("open_id") or notify.get("to") or ""
-            ).strip()
-            if not user_open_id:
-                raise ValueError("missing notify.user_open_id")
-            workspace = notify.get("workspace")
-            await send_feishu_dm(
-                user_open_id=user_open_id,
-                content=_format_notification(job, entry),
-                workspace=str(workspace) if workspace else None,
-            )
+            raise ValueError("Feishu DM notification requires HLAgent gateway integration")
         elif notify_type:
             raise ValueError(f"unsupported notify.type: {notify_type}")
     except Exception as exc:
@@ -294,7 +282,8 @@ def _command_for_job(job: dict[str, Any]) -> str:
     if not message:
         raise ValueError("agent_turn cron job is missing payload.message")
     cwd = str(job.get("cwd") or ".")
-    parts = ["ohmo"]
+    agent_cli = os.environ.get("OPENHARNESS_AGENT_CLI", "openharness")
+    parts = [agent_cli]
     profile = payload.get("profile") or job.get("provider_profile")
     if profile is None and load_gateway_config is not None:
         profile = load_gateway_config().provider_profile

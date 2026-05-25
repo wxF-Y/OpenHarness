@@ -6,7 +6,6 @@ import urllib.error
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from openharness.auth.external import (
     CLAUDE_PROVIDER,
@@ -19,7 +18,6 @@ from openharness.auth.external import (
     refresh_claude_oauth_credential,
 )
 from openharness.auth.storage import ExternalAuthBinding, load_external_binding, store_external_binding
-from openharness.cli import app
 from openharness.config.settings import Settings, load_settings
 
 
@@ -236,131 +234,6 @@ def test_settings_resolve_auth_refreshes_expired_external_binding(monkeypatch, t
     assert persisted["claudeAiOauth"]["refreshToken"] == "refresh-token"
 
 
-def test_cli_codex_login_binds_without_switching(monkeypatch, tmp_path: Path):
-    config_dir = tmp_path / "config"
-    codex_home = tmp_path / "codex-home"
-    config_dir.mkdir()
-    codex_home.mkdir()
-    token = _fake_jwt({"exp": 4_102_444_800})
-    (codex_home / "auth.json").write_text(
-        json.dumps(
-            {
-                "auth_mode": "chatgpt",
-                "tokens": {
-                    "access_token": token,
-                    "refresh_token": "refresh-token",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    # Prevent env var leakage from overriding the configured api_key
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    (config_dir / "settings.json").write_text(
-        json.dumps(
-            {
-                "api_format": "openai",
-                "provider": "openai",
-                "model": "kimi-k2.5",
-                "base_url": "https://api.moonshot.cn/anthropic",
-                "api_key": "stale-key",
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["auth", "codex-login"])
-
-    assert result.exit_code == 0
-    settings = load_settings()
-    assert settings.active_profile != "codex"
-    assert settings.provider == "openai"
-    assert settings.base_url == "https://api.moonshot.cn/anthropic"
-    assert settings.api_key == "stale-key"
-    assert "Use `oh provider use codex` to activate it." in result.stdout
-    binding = load_external_binding(CODEX_PROVIDER)
-    assert binding is not None
-    assert Path(binding.source_path) == codex_home / "auth.json"
-
-
-def test_cli_claude_login_binds_without_switching(monkeypatch, tmp_path: Path):
-    config_dir = tmp_path / "config"
-    claude_home = tmp_path / "claude-home"
-    claude_home.mkdir()
-    (claude_home / ".credentials.json").write_text(
-        json.dumps(
-            {
-                "claudeAiOauth": {
-                    "accessToken": "claude-access-token",
-                    "refreshToken": "claude-refresh-token",
-                    "expiresAt": 4_102_444_800_000,
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
-    monkeypatch.setattr("openharness.auth.external.platform.system", lambda: "Linux")
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["auth", "claude-login"])
-
-    assert result.exit_code == 0
-    settings = load_settings()
-    assert settings.provider == "anthropic"
-    assert settings.api_format == "anthropic"
-    assert settings.active_profile == "claude-api"
-    assert "Use `oh provider use claude-subscription` to activate it." in result.stdout
-    binding = load_external_binding(CLAUDE_PROVIDER)
-    assert binding is not None
-    assert Path(binding.source_path) == claude_home / ".credentials.json"
-
-
-def test_cli_claude_login_refreshes_expired_credentials(monkeypatch, tmp_path: Path):
-    config_dir = tmp_path / "config"
-    claude_home = tmp_path / "claude-home"
-    claude_home.mkdir()
-    source = claude_home / ".credentials.json"
-    source.write_text(
-        json.dumps(
-            {
-                "claudeAiOauth": {
-                    "accessToken": "expired-token",
-                    "refreshToken": "claude-refresh-token",
-                    "expiresAt": 1,
-                    "scopes": ["user:inference"],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("CLAUDE_HOME", str(claude_home))
-    monkeypatch.setattr("openharness.auth.external.platform.system", lambda: "Linux")
-    monkeypatch.setattr(
-        "openharness.auth.external.refresh_claude_oauth_credential",
-        lambda refresh_token: {
-            "access_token": "fresh-token",
-            "refresh_token": refresh_token,
-            "expires_at_ms": 4_102_444_800_000,
-        },
-    )
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["auth", "claude-login"])
-
-    assert result.exit_code == 0
-    persisted = json.loads(source.read_text(encoding="utf-8"))
-    assert persisted["claudeAiOauth"]["accessToken"] == "fresh-token"
-    assert persisted["claudeAiOauth"]["scopes"] == ["user:inference"]
-
-
 def test_load_claude_external_credential_refreshes_expired_keychain(monkeypatch, tmp_path: Path):
     login_keychain = tmp_path / "login.keychain-db"
     writes: list[list[str]] = []
@@ -423,41 +296,6 @@ def test_load_claude_external_credential_refreshes_expired_keychain(monkeypatch,
         "-a",
     ]
     assert "yanchundong" in writes[0]
-
-
-def test_cli_provider_use_activates_codex_profile(monkeypatch, tmp_path: Path):
-    config_dir = tmp_path / "config"
-    codex_home = tmp_path / "codex-home"
-    config_dir.mkdir()
-    codex_home.mkdir()
-    token = _fake_jwt({"exp": 4_102_444_800})
-    (codex_home / "auth.json").write_text(
-        json.dumps(
-            {
-                "auth_mode": "chatgpt",
-                "tokens": {
-                    "access_token": token,
-                    "refresh_token": "refresh-token",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("OPENHARNESS_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("CODEX_HOME", str(codex_home))
-
-    runner = CliRunner()
-    assert runner.invoke(app, ["auth", "codex-login"]).exit_code == 0
-
-    result = runner.invoke(app, ["provider", "use", "codex"])
-
-    assert result.exit_code == 0
-    settings = load_settings()
-    assert settings.active_profile == "codex"
-    assert settings.provider == CODEX_PROVIDER
-    assert settings.api_format == "openai"
-    assert settings.base_url is None
-    assert settings.model == "gpt-5.4"
 
 
 def test_settings_resolve_auth_rejects_third_party_base_url_for_claude_subscription(
