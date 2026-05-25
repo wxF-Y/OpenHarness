@@ -47,10 +47,12 @@ export function useWebSocket(sessionId: string | null) {
 
       case 'assistant_delta':
         if (event.message) ss.appendDelta(event.message)
+        if (!ss.busy) ss.setBusy(true)
         break
 
       case 'assistant_thinking_delta':
         if (event.message) ss.appendThinkingDelta(event.message)
+        if (!ss.busy) ss.setBusy(true)
         break
 
       case 'assistant_complete':

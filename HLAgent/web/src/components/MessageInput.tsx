@@ -46,9 +46,10 @@ interface Props {
   sendRequest: (req: FrontendRequest) => void
   wsStatus: string
   initialValue?: string
+  placeholder?: string
 }
 
-export default function MessageInput({ busy, commands, sendRequest, wsStatus, initialValue }: Props) {
+export default function MessageInput({ busy, commands, sendRequest, wsStatus, initialValue, placeholder }: Props) {
   const [input, setInput] = useState(initialValue ?? '')
   const [history, setHistory] = useState<string[]>([])
   const [historyIdx, setHistoryIdx] = useState(-1)
@@ -273,7 +274,7 @@ export default function MessageInput({ busy, commands, sendRequest, wsStatus, in
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={disabled || busy}
-          placeholder={disabled ? '会话未连接' : busy ? '运行中…' : '输入消息，Enter 发送，/ 命令，↑↓ 历史'}
+          placeholder={disabled ? '会话未连接' : busy ? '运行中…' : (placeholder ?? '输入消息，Enter 发送，/ 命令，↑↓ 历史')}
           rows={1}
           style={{
             flex: 1, resize: 'none', background: 'none', border: 'none', outline: 'none',

@@ -257,6 +257,40 @@ async def delete_session(session_id: _SESSION_ID) -> None:
         else:
             log.debug("Skipping rmtree: %s not under workspaces root", cwd_str)
 
+    # Clean up the specific teams-tasks run directory for team sessions.
+    # expert_role_label is "🤝 {team_name}" for team sessions.
+    # Find the run whose team.json has lead_session_id == internal_sid (the leader's session).
+    label = entry.expert_role_label or ""
+    if label.startswith("🤝 ") and internal_sid:
+        team_name = label[len("🤝 "):].strip()
+        template_name = re.sub(r"-\d{8}-\d{6}$", "", team_name)
+        # Validate to prevent path traversal via crafted expert_role_label
+        if template_name and re.fullmatch(r"[a-zA-Z0-9_\-.]{1,64}", template_name):
+            import json as _json
+            from openharness.config.paths import get_config_dir
+            runs_root = (get_config_dir() / "teams-tasks" / template_name).resolve()
+            if runs_root.exists():
+                for run_dir in runs_root.iterdir():
+                    if not run_dir.is_dir():
+                        continue
+                    # Ensure run_dir stays within runs_root (no symlink escape)
+                    if not run_dir.resolve().is_relative_to(runs_root):
+                        log.warning("Skipping run_dir outside runs_root: %s", run_dir)
+                        continue
+                    team_json = run_dir / "team.json"
+                    if not team_json.exists():
+                        continue
+                    try:
+                        data = _json.loads(team_json.read_text(encoding="utf-8"))
+                        if data.get("lead_session_id") == internal_sid:
+                            await asyncio.to_thread(shutil.rmtree, str(run_dir), True)
+                            log.info("Removed teams-tasks run dir: %s", run_dir)
+                            break
+                    except Exception as exc:
+                        log.warning("Failed to check/remove run dir %s: %s", run_dir, exc)
+        elif template_name:
+            log.warning("Skipping teams-tasks cleanup: unsafe template_name %r", template_name)
+
 
 @router.get("/{session_id}/commands")
 async def get_commands(session_id: _SESSION_ID) -> dict[str, Any]:

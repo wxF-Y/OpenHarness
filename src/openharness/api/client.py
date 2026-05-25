@@ -205,13 +205,17 @@ class AnthropicApiClient:
 
     async def _stream_once(self, request: ApiMessageRequest) -> AsyncIterator[ApiStreamEvent]:
         """Single attempt at streaming a message."""
+
+        def _clean(s: str) -> str:
+            return s.encode("utf-8", errors="replace").decode("utf-8")
+
         params: dict[str, Any] = {
             "model": request.model,
             "messages": [message.to_api_param() for message in request.messages],
             "max_tokens": request.max_tokens,
         }
         if request.system_prompt:
-            params["system"] = request.system_prompt
+            params["system"] = _clean(request.system_prompt)
         if self._claude_oauth:
             attribution = claude_attribution_header()
             params["system"] = (

@@ -95,7 +95,13 @@ def save_session_snapshot(
         "summary": summary,
         "message_count": len(messages),
     }
-    data = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    # Serialize — clean any surrogate characters that break utf-8 encoding
+    try:
+        data = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    except (UnicodeEncodeError, ValueError):
+        # Fallback: re-encode to drop surrogates then decode back to clean str
+        raw = json.dumps(payload, indent=2, ensure_ascii=True) + "\n"
+        data = raw.encode("utf-8", errors="replace").decode("utf-8")
 
     # Save as latest
     latest_path = session_dir / "latest.json"

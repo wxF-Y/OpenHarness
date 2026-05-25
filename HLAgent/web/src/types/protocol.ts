@@ -127,11 +127,13 @@ export interface BridgeSessionSnapshot {
   output_path?: string
 }
 
-export type SwarmStatus = 'running' | 'idle' | 'done' | 'error'
+export type SwarmStatus = 'running' | 'idle' | 'done' | 'error' | 'active' | 'stopped'
 
 export interface SwarmTeammate {
   name: string
   status: SwarmStatus
+  session_id?: string
+  last_message?: string
   duration?: number
   task?: string
 }

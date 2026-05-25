@@ -30,6 +30,7 @@ interface UiState {
   activeChatSessionId: string | null
   sidebarRefreshKey: number
   expertRoleLabels: Record<string, string>
+  teamSessionTask: Record<string, string>
   setActiveModal: (modal: ActiveModal) => void
   setCompactPhase: (phase: string | null) => void
   addErrorToast: (message: string, type?: 'error' | 'warning' | 'info') => void
@@ -41,6 +42,8 @@ interface UiState {
   setExpertRoleLabels: (labels: Record<string, string>) => void
   /** Remove a single session's label (used on session delete) */
   removeExpertRoleLabel: (sessionId: string) => void
+  /** Store task content for a team session */
+  setTeamSessionTask: (sessionId: string, task: string) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -51,6 +54,7 @@ export const useUiStore = create<UiState>((set) => ({
   activeChatSessionId: null,
   sidebarRefreshKey: 0,
   expertRoleLabels: {},
+  teamSessionTask: {},
 
   setActiveModal: (activeModal) => set({ activeModal }),
   setCompactPhase: (compactPhase) => set({ compactPhase }),
@@ -74,4 +78,6 @@ export const useUiStore = create<UiState>((set) => ({
       delete next[sessionId]
       return { expertRoleLabels: next }
     }),
+  setTeamSessionTask: (sessionId, task) =>
+    set((prev) => ({ teamSessionTask: { ...prev.teamSessionTask, [sessionId]: task } })),
 }))

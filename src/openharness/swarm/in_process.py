@@ -1,23 +1,14 @@
 """In-process teammate execution backend.
 
 Runs teammate agents as asyncio Tasks inside the current Python process,
-using :mod:`contextvars` for per-teammate context isolation (the Python
-equivalent of Node's AsyncLocalStorage).
+using :mod:`contextvars` for per-teammate context isolation.
 
 Architecture summary
 --------------------
-* :class:`TeammateAbortController` – dual-signal abort controller providing
-  both graceful-cancel and force-kill semantics.
-* :class:`TeammateContext` – dataclass holding identity + abort controller +
-  runtime stats (tool_use_count, total_tokens, status).
-* :func:`get_teammate_context` / :func:`set_teammate_context` – ContextVar
-  accessors so any code running inside a teammate task can discover its own
-  identity without explicit argument threading.
-* :func:`start_in_process_teammate` – the actual coroutine that sets up
-  context, drives the query engine, and cleans up on exit.
-* :class:`InProcessBackend` – implements
-  :class:`~openharness.swarm.types.TeammateExecutor` and manages the dict of
-  live asyncio Tasks.
+* :class:`~openharness.swarm.abort.TeammateAbortController` – dual-signal abort.
+* :class:`~openharness.swarm.context.TeammateContext` – per-task isolated state.
+* :func:`start_in_process_teammate` – coroutine driving the query engine loop.
+* :class:`InProcessBackend` – implements TeammateExecutor, manages live Tasks.
 """
 
 from __future__ import annotations
@@ -27,13 +18,27 @@ import contextlib
 import logging
 import time
 import uuid
-from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
+from openharness.swarm.abort import TeammateAbortController
+from openharness.swarm.context import (
+    TeammateContext,
+    TeammateStatus,
+    get_teammate_context,
+    set_teammate_context,
+)
 from openharness.swarm.mailbox import (
     TeammateMailbox,
     create_idle_notification,
+)
+from openharness.engine.stream_events import (
+    AssistantTextDelta,
+    AssistantThinkingDelta,
+    AssistantTurnComplete,
+    ErrorEvent,
+    ToolExecutionStarted,
+    ToolExecutionCompleted,
 )
 from openharness.swarm.types import (
     BackendType,
@@ -44,148 +49,39 @@ from openharness.swarm.types import (
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Abort controller
-# ---------------------------------------------------------------------------
+_member_notify_callbacks: dict[str, Any] = {}
+_notify_lock = asyncio.Lock()
 
 
-class TeammateAbortController:
-    """Dual-signal abort controller for in-process teammates.
-
-    Provides both *graceful* cancellation (set ``cancel_event``; the agent
-    finishes its current tool use and then exits) and *force* kill (set
-    ``force_cancel``; the asyncio Task is immediately cancelled).
-
-    Mirrors the TypeScript ``AbortController`` / linked-controller pattern used
-    in ``spawnInProcess.ts`` and ``InProcessBackend.ts``.
-    """
-
-    def __init__(self) -> None:
-        self.cancel_event: asyncio.Event = asyncio.Event()
-        """Set to request graceful cancellation of the agent loop."""
-
-        self.force_cancel: asyncio.Event = asyncio.Event()
-        """Set to request immediate (forced) termination."""
-
-        self._reason: str | None = None
-
-    @property
-    def is_cancelled(self) -> bool:
-        """Return True if either cancellation signal has been set."""
-        return self.cancel_event.is_set() or self.force_cancel.is_set()
-
-    def request_cancel(self, reason: str | None = None, *, force: bool = False) -> None:
-        """Request cancellation of the teammate.
-
-        Args:
-            reason: Human-readable reason for the cancellation (for logging).
-            force: When True, set ``force_cancel`` for immediate termination.
-                   When False, set ``cancel_event`` for graceful shutdown.
-        """
-        self._reason = reason
-        if force:
-            logger.debug(
-                "[TeammateAbortController] Force-cancel requested: %s", reason or "(no reason)"
-            )
-            self.force_cancel.set()
-            self.cancel_event.set()  # Also set graceful so both checks fire
-        else:
-            logger.debug(
-                "[TeammateAbortController] Graceful cancel requested: %s",
-                reason or "(no reason)",
-            )
-            self.cancel_event.set()
-
-    @property
-    def reason(self) -> str | None:
-        """The reason provided to the most recent :meth:`request_cancel` call."""
-        return self._reason
+async def register_notify_callback(parent_session_id: str, callback: Any) -> None:
+    """Register a swarm_status callback for a Leader session."""
+    async with _notify_lock:
+        _member_notify_callbacks[parent_session_id] = callback
 
 
-# ---------------------------------------------------------------------------
-# Per-teammate context isolation via ContextVar
+async def unregister_notify_callback(parent_session_id: str) -> None:
+    """Remove a registered callback."""
+    async with _notify_lock:
+        _member_notify_callbacks.pop(parent_session_id, None)
+# Queue items: str (text delta) | None (stream done) | dict (tool event)
 # ---------------------------------------------------------------------------
 
-
-TeammateStatus = Literal["starting", "running", "idle", "stopping", "stopped"]
-
-
-@dataclass
-class TeammateContext:
-    """All per-teammate state that must be isolated across concurrent agents.
-
-    Stored in a :data:`ContextVar` so that each asyncio Task sees its own
-    copy without any locking.
-    """
-
-    agent_id: str
-    """Unique agent identifier (``agentName@teamName``)."""
-
-    agent_name: str
-    """Human-readable name, e.g. ``"researcher"``."""
-
-    team_name: str
-    """Team this teammate belongs to."""
-
-    parent_session_id: str | None = None
-    """Session ID of the spawning leader for transcript correlation."""
-
-    color: str | None = None
-    """Optional UI color string."""
-
-    plan_mode_required: bool = False
-    """Whether this agent must enter plan mode before making changes."""
-
-    abort_controller: TeammateAbortController = field(
-        default_factory=TeammateAbortController
-    )
-    """Dual-signal abort controller (graceful cancel + force kill)."""
-
-    message_queue: asyncio.Queue[TeammateMessage] = field(
-        default_factory=asyncio.Queue
-    )
-    """Queue of pending messages delivered between turns.
-
-    The execution loop drains this between query iterations so messages from
-    the leader are injected as new user turns rather than being lost.
-    """
-
-    status: TeammateStatus = "starting"
-    """Lifecycle status of this teammate."""
-
-    started_at: float = field(default_factory=time.time)
-    """Unix timestamp when this teammate was spawned."""
-
-    tool_use_count: int = 0
-    """Number of tool invocations made during this teammate's lifetime."""
-
-    total_tokens: int = 0
-    """Cumulative token count (input + output) across all query turns."""
-
-    # Backwards-compatible shim so existing code that reads ``cancel_event``
-    # continues to work without modification.
-    @property
-    def cancel_event(self) -> asyncio.Event:
-        """Graceful cancellation event (delegates to :attr:`abort_controller`)."""
-        return self.abort_controller.cancel_event
+_member_stream_queues: dict[str, asyncio.Queue] = {}
+_member_stream_lock = asyncio.Lock()
 
 
-_teammate_context_var: ContextVar[TeammateContext | None] = ContextVar(
-    "_teammate_context_var", default=None
-)
+async def get_or_create_stream_queue(session_id: str) -> asyncio.Queue:
+    """Return (creating if necessary) the streaming queue for a member session."""
+    async with _member_stream_lock:
+        if session_id not in _member_stream_queues:
+            _member_stream_queues[session_id] = asyncio.Queue(maxsize=512)
+        return _member_stream_queues[session_id]
 
 
-def get_teammate_context() -> TeammateContext | None:
-    """Return the :class:`TeammateContext` for the currently-running teammate task.
-
-    Returns ``None`` when called outside of an in-process teammate.
-    """
-    return _teammate_context_var.get()
-
-
-def set_teammate_context(ctx: TeammateContext) -> None:
-    """Bind *ctx* to the current async context (task-local)."""
-    _teammate_context_var.set(ctx)
+async def cleanup_stream_queue(session_id: str) -> None:
+    """Remove the streaming queue after stream is done."""
+    async with _member_stream_lock:
+        _member_stream_queues.pop(session_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -200,35 +96,7 @@ async def start_in_process_teammate(
     abort_controller: TeammateAbortController,
     query_context: Any | None = None,
 ) -> None:
-    """Run the agent query loop for an in-process teammate.
-
-    This coroutine is launched as an :class:`asyncio.Task` by
-    :class:`InProcessBackend`.  It:
-
-    1. Binds a fresh :class:`TeammateContext` to the current async context.
-    2. Drives the query engine loop (reusing
-       :func:`~openharness.engine.query.run_query`).
-    3. Polls the teammate's mailbox between turns for incoming messages /
-       shutdown requests.  Any ``user_message`` items are pushed into the
-       context's :attr:`~TeammateContext.message_queue` and injected as
-       additional user turns.
-    4. Writes an idle-notification to the leader when done.
-    5. Cleans up on normal exit *or* cancellation.
-
-    Parameters
-    ----------
-    config:
-        Spawn configuration from the leader.
-    agent_id:
-        Fully-qualified agent identifier (``name@team``).
-    abort_controller:
-        Dual-signal abort controller for this teammate.
-    query_context:
-        Optional pre-built
-        :class:`~openharness.engine.query.QueryContext`.  When *None* this
-        function runs a stub that respects the cancel signals so tests and
-        direct invocations still work.
-    """
+    """Run the agent query loop for an in-process teammate as an asyncio Task."""
     ctx = TeammateContext(
         agent_id=agent_id,
         agent_name=config.name,
@@ -242,7 +110,14 @@ async def start_in_process_teammate(
     )
     set_teammate_context(ctx)
 
-    mailbox = TeammateMailbox(team_name=config.team, agent_id=agent_id)
+    # Member's own inbox: use run-specific path if mailbox_team_path is set
+    if config.mailbox_team_path:
+        from openharness.swarm.mailbox import get_team_task_mailbox_dir
+        _mt, _ms = config.mailbox_team_path.split("/", 1)
+        _member_inbox = get_team_task_mailbox_dir(_mt, _ms, agent_id)
+        mailbox = TeammateMailbox(config.team, agent_id, inbox_dir=_member_inbox)
+    else:
+        mailbox = TeammateMailbox(team_name=config.team, agent_id=agent_id)
 
     logger.debug("[in_process] %s: starting", agent_id)
 
@@ -274,15 +149,30 @@ async def start_in_process_teammate(
         logger.exception("[in_process] %s: unhandled exception in agent loop", agent_id)
     finally:
         ctx.status = "stopped"
-        # Notify the leader that this teammate has gone idle / finished.
-        with contextlib.suppress(Exception):
-            idle_msg = create_idle_notification(
-                sender=agent_id,
-                recipient="leader",
-                summary=f"{config.name} finished (tools={ctx.tool_use_count}, tokens={ctx.total_tokens})",
-            )
-            leader_mailbox = TeammateMailbox(team_name=config.team, agent_id="leader")
-            await leader_mailbox.write(idle_msg)
+
+        # Invoke on_status_change callback so Gateway can emit swarm_status event
+        if config.on_status_change is not None:
+            with contextlib.suppress(Exception):
+                from openharness.swarm.team_lifecycle import read_team_file, TeamFile
+                # When mailbox_team_path is set (B.5 run isolation), read members
+                # from the run's team.json so session_ids are included.
+                if config.mailbox_team_path:
+                    try:
+                        from openharness.config.paths import get_config_dir
+                        _t, _s = config.mailbox_team_path.split("/", 1)
+                        _run_path = get_config_dir() / "teams-tasks" / _t / _s / "team.json"
+                        tf = TeamFile.load(_run_path) if _run_path.exists() else read_team_file(config.team)
+                    except Exception:
+                        tf = read_team_file(config.team)
+                else:
+                    tf = read_team_file(config.team)
+                if tf is not None:
+                    members_data = [m.to_dict() for m in tf.members.values()]
+                    # Enrich the current agent's entry with last_message from memory
+                    for m in members_data:
+                        if m.get("agent_id") == agent_id and ctx.last_assistant_message:
+                            m["last_message"] = ctx.last_assistant_message
+                    config.on_status_change(members_data)
 
         logger.debug(
             "[in_process] %s: exiting (tools=%d, tokens=%d)",
@@ -354,45 +244,159 @@ async def _run_query_loop(
         ConversationMessage.from_user_text(config.prompt)
     ]
 
-    async for event, usage in run_query(query_context, messages):
-        # Track token usage if usage info is provided
-        if usage is not None:
-            with contextlib.suppress(AttributeError, TypeError):
-                ctx.total_tokens += getattr(usage, "input_tokens", 0)
-                ctx.total_tokens += getattr(usage, "output_tokens", 0)
+    # Set up streaming queue for real-time deltas (if session_id is set)
+    stream_q: asyncio.Queue | None = None
+    if config.session_id:
+        stream_q = await get_or_create_stream_queue(config.session_id)
 
-        # Track tool use events
-        with contextlib.suppress(AttributeError, TypeError):
-            if getattr(event, "type", None) in ("tool_use", "tool_call"):
+    try:
+        async for event, usage in run_query(query_context, messages):
+            # Track token usage if usage info is provided
+            if usage is not None:
+                with contextlib.suppress(AttributeError, TypeError):
+                    ctx.total_tokens += getattr(usage, "input_tokens", 0)
+                    ctx.total_tokens += getattr(usage, "output_tokens", 0)
+
+            # Track tool use count
+            if isinstance(event, ToolExecutionStarted):
                 ctx.tool_use_count += 1
 
-        # Check for cancellation or shutdown between events
-        if ctx.abort_controller.is_cancelled:
-            logger.debug(
-                "[in_process] %s: abort_controller cancelled, stopping query loop",
-                ctx.agent_id,
-            )
-            return
+            # Capture latest assistant text delta
+            if isinstance(event, AssistantTextDelta) and event.text:
+                ctx.last_assistant_message = (ctx.last_assistant_message or "") + event.text
+                if stream_q is not None:
+                    with contextlib.suppress(asyncio.QueueFull):
+                        stream_q.put_nowait({"type": "delta", "text": event.text})
 
-        # Drain mailbox — handle shutdown requests immediately
-        should_stop = await _drain_mailbox(mailbox, ctx)
-        if should_stop:
-            return
+            # When turn completes, extract full text from the message
+            # (covers models that don't emit AssistantTextDelta, only tool calls)
+            elif isinstance(event, AssistantTurnComplete):
+                with contextlib.suppress(Exception):
+                    from openharness.engine.messages import TextBlock as _TB2
+                    turn_text = "".join(
+                        b.text for b in event.message.content
+                        if isinstance(b, _TB2) and b.text
+                    )
+                    if turn_text:
+                        had_prior_deltas = bool(ctx.last_assistant_message)
+                        ctx.last_assistant_message = turn_text
+                        # Push full text as single delta if no streaming deltas came (batch mode)
+                        if not had_prior_deltas and stream_q is not None:
+                            with contextlib.suppress(asyncio.QueueFull):
+                                stream_q.put_nowait({"type": "delta", "text": turn_text})
 
-        # Drain message queue and inject as new turns
-        while not ctx.message_queue.empty():
-            try:
-                queued = ctx.message_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            logger.debug(
-                "[in_process] %s: injecting queued message from %s",
-                ctx.agent_id,
-                queued.from_agent,
-            )
-            messages.append(ConversationMessage(role="user", content=queued.text))
+            # Capture API errors for the summary
+            elif isinstance(event, ErrorEvent):
+                ctx.last_assistant_message = f"[错误] {event.message}"
+                logger.error("[in_process] %s: ErrorEvent: %s", ctx.agent_id, event.message)
 
-    ctx.status = "idle"
+            # Push tool-start/end events for frontend tool call cards
+            if isinstance(event, ToolExecutionStarted) and stream_q is not None:
+                with contextlib.suppress(asyncio.QueueFull):
+                    import json as _json
+                    try:
+                        safe_input = _json.loads(_json.dumps(event.tool_input, default=str))
+                    except Exception:
+                        safe_input = {}
+                    stream_q.put_nowait({"type": "tool_start", "name": event.tool_name, "input": safe_input})
+            if isinstance(event, ToolExecutionCompleted) and stream_q is not None:
+                with contextlib.suppress(asyncio.QueueFull):
+                    stream_q.put_nowait({"type": "tool_end", "output": event.output[:200]})
+
+            # Check for cancellation or shutdown between events
+            if ctx.abort_controller.is_cancelled:
+                logger.debug(
+                    "[in_process] %s: abort_controller cancelled, stopping query loop",
+                    ctx.agent_id,
+                )
+                return
+
+            # Drain mailbox — handle shutdown requests immediately
+            should_stop = await _drain_mailbox(mailbox, ctx)
+            if should_stop:
+                return
+
+            # Drain message queue and inject as new turns
+            while not ctx.message_queue.empty():
+                try:
+                    queued = ctx.message_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                logger.debug(
+                    "[in_process] %s: injecting queued message from %s",
+                    ctx.agent_id,
+                    queued.from_agent,
+                )
+                messages.append(ConversationMessage(role="user", content=queued.text))
+
+        ctx.status = "idle"
+
+    finally:
+        # Save session BEFORE signalling done so transcript endpoint finds it immediately
+        if config.session_id and messages:
+            with contextlib.suppress(Exception):
+                from openharness.services.session_backend import DEFAULT_SESSION_BACKEND
+                from openharness.api.usage import UsageSnapshot
+                DEFAULT_SESSION_BACKEND.save_snapshot(
+                    cwd=config.cwd or ".",
+                    model=query_context.model,
+                    system_prompt=query_context.system_prompt,
+                    messages=messages,
+                    usage=UsageSnapshot(input_tokens=ctx.total_tokens, output_tokens=0),
+                    session_id=config.session_id,
+                )
+
+        # Send idle_notification to leader with full result
+        try:
+            _agent_id = ctx.agent_id
+            last_result = ctx.last_assistant_message or ""
+            if not last_result and messages:
+                for msg in reversed(messages):
+                    if msg.role == "assistant":
+                        from openharness.engine.messages import TextBlock as _TB
+                        for block in msg.content:
+                            if isinstance(block, _TB) and block.text.strip():
+                                last_result = block.text.strip()
+                                break
+                        if last_result:
+                            break
+            if last_result:
+                raw_summary = f"{config.name} finished.\n\n{last_result}"
+            else:
+                raw_summary = f"{config.name} finished (tools={ctx.tool_use_count})"
+            summary = raw_summary.encode("utf-8", errors="replace").decode("utf-8")
+            idle_msg = create_idle_notification(sender=_agent_id, recipient="leader", summary=summary)
+            if config.mailbox_team_path:
+                from openharness.swarm.mailbox import get_team_task_mailbox_dir
+                _t, _s = config.mailbox_team_path.split("/", 1)
+                inbox_path = get_team_task_mailbox_dir(_t, _s, "leader")
+                leader_mailbox = TeammateMailbox(config.team, "leader", inbox_dir=inbox_path)
+            else:
+                leader_mailbox = TeammateMailbox(team_name=config.team, agent_id="leader")
+            await leader_mailbox.write(idle_msg)
+            logger.debug("[in_process] %s: sent idle_notification", _agent_id)
+            # Push swarm_status WS event via on_status_change (set by backend_host at session start)
+            if config.on_status_change is not None:
+                with contextlib.suppress(Exception):
+                    from openharness.config.paths import get_config_dir
+                    _run_dir = get_config_dir() / "teams-tasks" / _t / _s
+                    run_tj_path = _run_dir / "team.json"
+                    if run_tj_path.exists():
+                        from openharness.swarm.team_lifecycle import TeamFile
+                        _rtf = TeamFile.load(run_tj_path)
+                        members_data = [m.to_dict() for m in _rtf.members.values()]
+                        # Enrich with last_message
+                        for md in members_data:
+                            if md.get("agent_id") == _agent_id and last_result:
+                                md["last_message"] = last_result[:200]
+                        config.on_status_change(members_data)
+        except Exception as _exc:
+            logger.error("[in_process] %s: failed to send idle_notification: %s", ctx.agent_id, _exc)
+
+        # Signal stream end to SSE subscribers (after session is persisted)
+        if stream_q is not None:
+            with contextlib.suppress(asyncio.QueueFull):
+                stream_q.put_nowait(None)
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +412,48 @@ class _TeammateEntry:
     abort_controller: TeammateAbortController
     task_id: str
     started_at: float = field(default_factory=time.time)
+
+
+async def _build_member_query_context(config: "TeammateSpawnConfig") -> Any:
+    """Build a lightweight QueryContext for an in-process member.
+
+    Uses only the member's system prompt — no global skill files, no CLAUDE.md loading.
+    Keeps the system prompt short and avoids surrogate encoding errors from long skill files.
+    """
+    import pathlib
+    from openharness.config.settings import load_settings
+    from openharness.prompts.environment import get_environment_info
+    from openharness.prompts.system_prompt import _format_environment_section
+    from openharness.tools import create_default_tool_registry
+    from openharness.engine.query import QueryContext
+    from openharness.permissions.checker import PermissionChecker
+    from openharness.ui.runtime import _resolve_api_client_from_settings
+
+    settings_overrides: dict[str, Any] = {}
+    if config.model:
+        settings_overrides["model"] = config.model
+    settings = load_settings().merge_cli_overrides(**settings_overrides)
+
+    api_client = _resolve_api_client_from_settings(settings)
+
+    # Member system prompt: role definition + environment section only (no global skills)
+    member_sp = (config.system_prompt or "").encode("utf-8", errors="replace").decode("utf-8")
+    cwd_path = pathlib.Path(config.cwd or ".").resolve()
+    env_info = get_environment_info(cwd=str(cwd_path))
+    env_section = _format_environment_section(env_info)
+    full_sp = f"{member_sp}\n\n{env_section}" if member_sp else env_section
+
+    tool_registry = create_default_tool_registry()
+
+    return QueryContext(
+        api_client=api_client,
+        tool_registry=tool_registry,
+        permission_checker=PermissionChecker(settings.permission),
+        cwd=cwd_path,
+        model=settings.model or "unknown",
+        system_prompt=full_sp,
+        max_tokens=settings.max_tokens or 8096,
+    )
 
 
 class InProcessBackend:
@@ -436,9 +482,8 @@ class InProcessBackend:
     async def spawn(self, config: TeammateSpawnConfig) -> SpawnResult:
         """Spawn an in-process teammate as an asyncio Task.
 
-        Creates a :class:`TeammateAbortController`, binds it to a new Task via
-        :mod:`contextvars` copy-on-create semantics, and registers the task in
-        :attr:`_active`.
+        Builds a lightweight QueryContext using only the member's system prompt
+        (no global skill files loaded), then runs the query loop in-process.
         """
         agent_id = f"{config.name}@{config.team}"
         task_id = f"in_process_{uuid.uuid4().hex[:12]}"
@@ -459,13 +504,25 @@ class InProcessBackend:
 
         abort_controller = TeammateAbortController()
 
-        # asyncio.create_task() copies the current Context automatically,
-        # so each Task starts with an independent ContextVar state.
+        # Build a lightweight QueryContext for the member (no global skill loading)
+        try:
+            query_context = await _build_member_query_context(config)
+        except Exception as exc:
+            logger.error("[InProcessBackend] Failed to build query context for %s: %s", agent_id, exc)
+            return SpawnResult(
+                task_id=task_id,
+                agent_id=agent_id,
+                backend_type=self.type,
+                success=False,
+                error=f"Failed to initialize member context: {exc}",
+            )
+
         task = asyncio.create_task(
             start_in_process_teammate(
                 config=config,
                 agent_id=agent_id,
                 abort_controller=abort_controller,
+                query_context=query_context,
             ),
             name=f"teammate-{agent_id}",
         )
@@ -489,20 +546,11 @@ class InProcessBackend:
             task_id=task_id,
             agent_id=agent_id,
             backend_type=self.type,
+            session_id=config.session_id,
         )
 
     async def send_message(self, agent_id: str, message: TeammateMessage) -> None:
-        """Write *message* to the teammate's file-based mailbox.
-
-        The agent name and team are inferred from *agent_id* (``name@team``
-        format).  This mirrors how pane-based backends work so the rest of
-        the swarm stack stays backend-agnostic.
-
-        If the teammate is running in-process and its :class:`TeammateContext`
-        is accessible, the message is also pushed directly into
-        ``ctx.message_queue`` for low-latency delivery without a filesystem
-        round-trip.
-        """
+        """Write *message* to the teammate's file-based mailbox."""
         if "@" not in agent_id:
             raise ValueError(
                 f"Invalid agent_id {agent_id!r}: expected 'agentName@teamName'"
@@ -529,24 +577,7 @@ class InProcessBackend:
     async def shutdown(
         self, agent_id: str, *, force: bool = False, timeout: float = 10.0
     ) -> bool:
-        """Terminate a running in-process teammate.
-
-        Parameters
-        ----------
-        agent_id:
-            The agent to terminate.
-        force:
-            If *True*, cancel the asyncio Task immediately without waiting for
-            graceful shutdown.
-        timeout:
-            How long (seconds) to wait for the task to complete after setting
-            the cancel event before falling back to :meth:`asyncio.Task.cancel`.
-
-        Returns
-        -------
-        bool
-            *True* if the agent was found and termination was initiated.
-        """
+        """Terminate a running in-process teammate. Returns True if found."""
         entry = self._active.get(agent_id)
         if entry is None:
             logger.debug(
@@ -588,15 +619,7 @@ class InProcessBackend:
     # ------------------------------------------------------------------
 
     async def _cleanup_teammate(self, agent_id: str) -> None:
-        """Perform full cleanup for *agent_id* after its task finishes.
-
-        - Removes the entry from :attr:`_active`.
-        - Cancels the abort controller (in case it was not already).
-        - Logs the cleanup.
-
-        This is called automatically from the task's done-callback and from
-        :meth:`shutdown`.
-        """
+        """Remove agent from registry and ensure abort controller is signalled."""
         entry = self._active.pop(agent_id, None)
         if entry is None:
             return
@@ -631,19 +654,7 @@ class InProcessBackend:
         )
 
     def get_teammate_status(self, agent_id: str) -> dict[str, Any] | None:
-        """Return a status dict for *agent_id* with usage stats.
-
-        Returns *None* if the agent is not in the active registry.
-
-        The returned dict includes::
-
-            {
-                "agent_id": str,
-                "task_id": str,
-                "is_done": bool,
-                "duration_s": float,
-            }
-        """
+        """Return status dict for *agent_id*, or None if not in registry."""
         entry = self._active.get(agent_id)
         if entry is None:
             return None
@@ -656,11 +667,7 @@ class InProcessBackend:
         }
 
     def list_teammates(self) -> list[tuple[str, bool, float]]:
-        """Return a list of ``(agent_id, is_running, duration_seconds)`` tuples.
-
-        ``is_running`` is True if the task is alive and not done.
-        ``duration_seconds`` is the wall-clock time since spawn.
-        """
+        """Return list of (agent_id, is_running, duration_seconds) tuples."""
         now = time.time()
         result = []
         for agent_id, entry in self._active.items():

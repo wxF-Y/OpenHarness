@@ -104,15 +104,16 @@ def build_inherited_cli_flags(
     teammate_mode: str | None = None,
     plugin_dirs: list[str] | None = None,
     extra_flags: list[str] | None = None,
+    shell_quote: bool = False,
 ) -> list[str]:
     """Build CLI flags to propagate from the current session to spawned teammates.
 
     Ensures teammates inherit important settings like permission mode, model
     selection, and plugin configuration from their parent.
 
-    All flag values are shell-quoted with :func:`shlex.quote` to prevent
-    command injection when the resulting list is later joined into a shell
-    command string.
+    When ``shell_quote=False`` (default), values are passed as-is for direct
+    subprocess exec (shell=False). Set ``shell_quote=True`` only when the
+    resulting list will be joined into a shell command string.
 
     Args:
         model: Model override to forward (e.g. ``"claude-opus-4-6"``).
@@ -124,7 +125,7 @@ def build_inherited_cli_flags(
         plan_mode_required: When True, bypass-permissions flag is suppressed
             (plan mode takes precedence over bypass for safety).
         settings_path: Path to a settings JSON file to propagate via
-            ``--settings``.  Shell-quoted for safety.
+            ``--settings``.
         teammate_mode: Teammate execution mode (``"auto"``, ``"in_process"``,
             ``"tmux"``).  Forwarded as ``--teammate-mode`` so tmux teammates
             use the same mode as the leader.
@@ -139,6 +140,9 @@ def build_inherited_cli_flags(
     """
     flags: list[str] = []
 
+    def _q(v: str) -> str:
+        return shlex.quote(v) if shell_quote else v
+
     # --- Permission mode ---------------------------------------------------
     # Plan mode takes precedence over bypass permissions for safety.
     if not plan_mode_required:
@@ -150,31 +154,31 @@ def build_inherited_cli_flags(
     # --- Model override ----------------------------------------------------
     # "inherit" means use the parent's model via the OPENHARNESS_MODEL env var.
     if model and model != "inherit":
-        flags.extend(["--model", shlex.quote(model)])
+        flags.extend(["--model", _q(model)])
 
     # --- System prompt override ------------------------------------------
     # Agent definitions can carry a dedicated worker system prompt. Forward it
     # explicitly so subprocess teammates preserve their role/personality.
     if system_prompt:
         prompt_flag = "--append-system-prompt" if system_prompt_mode == "append" else "--system-prompt"
-        flags.extend([prompt_flag, shlex.quote(system_prompt)])
+        flags.extend([prompt_flag, _q(system_prompt)])
 
     # --- Settings path propagation ----------------------------------------
     # Ensures teammates load the same settings JSON as the leader process.
     if settings_path:
-        flags.extend(["--settings", shlex.quote(settings_path)])
+        flags.extend(["--settings", _q(settings_path)])
 
     # --- Plugin directories -----------------------------------------------
     # Each enabled plugin directory is forwarded individually so that inline
     # plugins (loaded via --plugin-dir) are available inside teammates.
     for plugin_dir in plugin_dirs or []:
-        flags.extend(["--plugin-dir", shlex.quote(plugin_dir)])
+        flags.extend(["--plugin-dir", _q(plugin_dir)])
 
     # --- Teammate mode propagation ----------------------------------------
     # Forwards the session-level teammate mode so tmux-spawned teammates do
     # not re-detect the mode independently and possibly choose a different one.
     if teammate_mode:
-        flags.extend(["--teammate-mode", shlex.quote(teammate_mode)])
+        flags.extend(["--teammate-mode", _q(teammate_mode)])
 
     if extra_flags:
         flags.extend(extra_flags)
@@ -182,11 +186,15 @@ def build_inherited_cli_flags(
     return flags
 
 
-def build_inherited_env_vars() -> dict[str, str]:
+def build_inherited_env_vars(mailbox_team_path: str | None = None) -> dict[str, str]:
     """Build environment variables to forward to spawned teammates.
 
     Always includes ``OPENHARNESS_AGENT_TEAMS=1`` plus any provider/proxy
     vars that are set in the current process.
+
+    Args:
+        mailbox_team_path: When set, injected as ``OPENHARNESS_MAILBOX_TEAM_PATH``
+            so the subprocess writes idle_notification to the correct run mailbox.
 
     Returns:
         Dict of env var name → value to merge into the subprocess environment.
@@ -196,7 +204,13 @@ def build_inherited_env_vars() -> dict[str, str]:
         # Spawned workers should behave like workers, not recursively re-enter
         # coordinator mode just because the parent leader had the flag set.
         "CLAUDE_CODE_COORDINATOR_MODE": "0",
+        # Force Python UTF-8 mode so command-line args and stdio use UTF-8
+        # instead of the system locale (cp936/GBK on Chinese Windows).
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
     }
+    if mailbox_team_path:
+        env["OPENHARNESS_MAILBOX_TEAM_PATH"] = mailbox_team_path
 
     for key in _TEAMMATE_ENV_VARS:
         value = os.environ.get(key)

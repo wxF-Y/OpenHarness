@@ -102,6 +102,10 @@ def _format_api_error(exc: Exception) -> str:
     Tries to surface the HTTP status code and the response body/message when
     the raw str(exc) is empty or unhelpfully terse.
     """
+    # UnicodeEncodeError means message content has lone surrogates — show directly
+    if isinstance(exc, (UnicodeEncodeError, UnicodeDecodeError)):
+        return f"编码错误（消息含非法字符）：{exc}"
+
     base = str(exc).strip()
 
     # Try to get status code and response body from the exception

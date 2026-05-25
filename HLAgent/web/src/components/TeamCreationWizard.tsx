@@ -103,6 +103,8 @@ export default function TeamCreationWizard({ onClose, onCreated }: Props) {
         updateSubStep(0, { status: 'error', error: String(e) })
         if (timerRef.current) clearInterval(timerRef.current)
         setFailedRoles(rolesToCreate)
+        // Mark remaining steps as error so recovery UI condition triggers
+        updateSubStep(steps.length - 1, { status: 'error' })
         return
       }
     } else {
@@ -166,7 +168,7 @@ export default function TeamCreationWizard({ onClose, onCreated }: Props) {
         </div>
       )}
 
-      <div style={{ backgroundColor: '#1e1e2e', border: '1px solid #313244', borderRadius: '12px', width: step === 'roles' ? '900px' : '480px', maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ backgroundColor: '#1e1e2e', border: '1px solid #313244', borderRadius: '12px', width: step === 'roles' ? '900px' : '480px', maxWidth: '95vw', height: step === 'roles' ? '90vh' : 'auto', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px solid #313244', flexShrink: 0 }}>
           <div style={{ flex: 1, display: 'flex', gap: '1rem', fontSize: '0.8125rem' }}>
@@ -176,13 +178,14 @@ export default function TeamCreationWizard({ onClose, onCreated }: Props) {
               </span>
             ))}
           </div>
-          {step !== 'creating' && (
-            <button onClick={handleCancel} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1.25rem', lineHeight: 1, padding: '0 0.25rem' }}>×</button>
+          {/* Show × during creation only when there are errors (failed state) */}
+          {(step !== 'creating' || subSteps.some((s) => s.status === 'error')) && (
+            <button onClick={step === 'creating' ? onClose : handleCancel} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1.25rem', lineHeight: 1, padding: '0 0.25rem' }}>×</button>
           )}
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {/* Step 1: Name */}
           {step === 'name' && (
             <div style={{ padding: '1.5rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -219,12 +222,12 @@ export default function TeamCreationWizard({ onClose, onCreated }: Props) {
 
           {/* Step 2: Roles */}
           {step === 'roles' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
               <div style={{ padding: '0.5rem 1.25rem', borderBottom: '1px solid #313244', fontSize: '0.8125rem', color: '#6c7086', flexShrink: 0 }}>
                 选择专家 → 点击预览 → 勾选加入 &nbsp;·&nbsp;
                 <span style={{ color: '#89b4fa' }}>已选 {selectedRoles.length} 个（建议 2-5 个）</span>
               </div>
-              <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 <RoleLibraryPanel
                   mode="wizard"
                   selectedRoles={selectedRoles}
@@ -262,25 +265,48 @@ export default function TeamCreationWizard({ onClose, onCreated }: Props) {
               </div>
               <div style={{ fontSize: '0.75rem', color: '#6c7086' }}>已用时 {elapsedSecs}s</div>
 
-              {failedRoles.length > 0 && subSteps[subSteps.length - 1]?.status !== 'pending' && (
+              {/* Recovery UI: show when any step has failed */}
+              {subSteps.some((s) => s.status === 'error') && !subSteps.some((s) => s.status === 'running') && (
                 <div style={{ backgroundColor: '#181825', border: '1px solid #313244', borderRadius: '8px', padding: '1rem' }}>
-                  <div style={{ color: '#f9e2af', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-                    {createdTeamName} 已创建，但 {failedRoles.length} 个成员添加失败
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button onClick={() => { onCreated(createdTeamName!); navigate(`/swarm`) }}
-                      style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>
-                      手动添加
-                    </button>
-                    <button onClick={() => { setSubSteps([]); setElapsedSecs(0); setSucceededRoles(succeededRoles); startCreating(failedRoles) }}
-                      style={{ flex: 1, backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.75rem' }}>
-                      重试失败项
-                    </button>
-                    <button onClick={() => onCreated(createdTeamName!)}
-                      style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>
-                      完成（跳过失败）
-                    </button>
-                  </div>
+                  {!createdTeamName ? (
+                    // Team creation itself failed
+                    <div>
+                      <div style={{ color: '#f38ba8', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                        团队创建失败，请检查团队名是否已存在或服务器状态
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button onClick={() => { setStep('name'); setSubSteps([]); setFailedRoles([]) }}
+                          style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>
+                          ← 返回修改
+                        </button>
+                        <button onClick={() => { setSubSteps([]); setElapsedSecs(0); startCreating(failedRoles) }}
+                          style={{ flex: 1, backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.75rem' }}>
+                          重试
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    // Member addition failed
+                    <div>
+                      <div style={{ color: '#f9e2af', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                        {createdTeamName} 已创建，但 {failedRoles.length} 个成员添加失败
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button onClick={() => { onCreated(createdTeamName); navigate(`/?view=swarm`) }}
+                          style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>
+                          手动添加
+                        </button>
+                        <button onClick={() => { setSubSteps([]); setElapsedSecs(0); startCreating(failedRoles) }}
+                          style={{ flex: 1, backgroundColor: '#89b4fa', color: '#1e1e2e', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.75rem' }}>
+                          重试失败项
+                        </button>
+                        <button onClick={() => onCreated(createdTeamName)}
+                          style={{ flex: 1, backgroundColor: '#313244', color: '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}>
+                          完成（跳过失败）
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

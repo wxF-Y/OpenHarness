@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useUiStore, type AppView } from '../stores/uiStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useSwarmStore } from '../stores/swarmStore'
 import { useWebSocket } from '../hooks/useWebSocket'
 import Sidebar from './Sidebar'
 import StatusBar from './StatusBar'
@@ -12,6 +13,8 @@ import ErrorToastContainer from './ErrorToast'
 import CompactProgressBar from './CompactProgressBar'
 import TranscriptViewer from './TranscriptViewer'
 import MessageInput from './MessageInput'
+import SwarmMemberBar from './SwarmMemberBar'
+import SwarmMemberPane from './SwarmMemberPane'
 import MemoryPage from '../pages/MemoryPage'
 import SkillsPage from '../pages/SkillsPage'
 import ExpertsPage from '../pages/ExpertsPage'
@@ -63,8 +66,26 @@ interface ChatViewProps {
 function ChatView({ sessionId, sendRequest }: ChatViewProps) {
   const store = useSessionStore()
   const ui = useUiStore()
+  const navigate = useNavigate()
   const [showSettings, setShowSettings] = useState(false)
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+  const [members, setMembers] = useState<Record<string, import('../stores/swarmStore').TeamMember>>({})
+  const [paneRatio, setPaneRatio] = useState(0.5)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const resizingRef = useRef(false)
   const expertLabel = ui.expertRoleLabels[sessionId]
+  const isTeamSession = expertLabel?.startsWith('🤝 ')
+  const taskTeamName = isTeamSession ? expertLabel.slice(2).trim() : null
+  // Strip task-run timestamp suffix (e.g. "marketing-team-20260524-095500" → "marketing-team")
+  const teamName = taskTeamName?.replace(/-\d{8}-\d{6}$/, '') ?? null
+  const taskContent = ui.teamSessionTask[sessionId]
+  const teammates = useSwarmStore((s) => s.teammates)
+  const allDone = isTeamSession && Object.keys(members).length > 0 &&
+    Object.values(members).every((m) => {
+      const t = teammates.find((x) => x.name === m.name)
+      const status = t?.status ?? m.status
+      return status === 'idle' || status === 'stopped' || status === 'done'
+    })
 
   useEffect(() => {
     const s = useSessionStore.getState()
@@ -74,6 +95,107 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
       s.setWsStatus('disconnected')
     }
   }, [sessionId])
+
+  // Load team members if this is a team session.
+  // Initial state: load template members (no session_ids, chips disabled).
+  // Once Leader calls swarm_create_run and a run appears, poll for that run's
+  // team.json which has real session_ids, and replace the member state.
+  const [chatParams] = useSearchParams()
+  const fetchTeamName = chatParams.get('team') || teamName
+
+  // Load template members on mount (shows chip names, disabled until run appears)
+  useEffect(() => {
+    if (!isTeamSession || !fetchTeamName) return
+    fetch(`/api/swarm/teams/${encodeURIComponent(fetchTeamName)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.members) setMembers(data.members) })
+      .catch(() => {})
+  }, [isTeamSession, fetchTeamName])
+
+  // Poll for latest run — load members FROM run team.json which has real session_ids.
+  // Also tracks currentRunSlug to pass as runId to SwarmMemberPane for SSE/transcript.
+  // Re-fetches the run whenever any member still has session_id=null (spawn in progress).
+  const currentRunSlugRef = useRef<string | null>(null)
+  const [currentRunSlug, setCurrentRunSlug] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isTeamSession || !fetchTeamName) return
+
+    const pollRun = () => {
+      fetch(`/api/swarm/teams/${encodeURIComponent(fetchTeamName)}/runs`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((runs: Array<{ run_slug: string }> | null) => {
+          if (!runs || runs.length === 0) return
+          const slug = runs[0].run_slug
+          const slugChanged = slug !== currentRunSlugRef.current
+          // Re-fetch if: (a) slug changed, OR (b) any member still has no session_id
+          const anyNullSession = Object.values(members).some((m) => !m.session_id)
+          if (!slugChanged && !anyNullSession) return
+          if (slugChanged) {
+            currentRunSlugRef.current = slug
+            setCurrentRunSlug(slug)
+          }
+          return fetch(`/api/swarm/teams/${encodeURIComponent(fetchTeamName)}/runs/${encodeURIComponent(slug)}`)
+            .then((r) => r.ok ? r.json() : null)
+        })
+        .then((runData: { members?: Record<string, import('../stores/swarmStore').TeamMember> } | null | undefined) => {
+          if (!runData?.members) return
+          setMembers(runData.members)
+        })
+        .catch(() => {})
+    }
+    const interval = setInterval(pollRun, 3000)
+    pollRun()
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeamSession, fetchTeamName])
+
+  // Merge WS swarm_status events (for in-process members that emit events)
+  useEffect(() => {
+    if (!isTeamSession) return
+    setMembers((prev) => {
+      const updated = { ...prev }
+      for (const t of teammates) {
+        const key = Object.keys(updated).find((k) => updated[k].name === t.name)
+        if (key) {
+          updated[key] = {
+            ...updated[key],
+            status: (t.status as import('../stores/swarmStore').TeamMember['status']) ?? updated[key].status,
+            session_id: t.session_id ?? updated[key].session_id,
+          }
+        }
+      }
+      return updated
+    })
+  }, [teammates, isTeamSession])
+
+  // Resize divider handlers
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    resizingRef.current = true
+    const startX = e.clientX
+    const startRatio = paneRatio
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current || !containerRef.current) return
+      const totalWidth = containerRef.current.offsetWidth
+      const delta = (ev.clientX - startX) / totalWidth
+      setPaneRatio(Math.min(0.7, Math.max(0.3, startRatio + delta)))
+    }
+    const onUp = () => {
+      resizingRef.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  const selectedMember = selectedMemberId ? members[selectedMemberId] : null
+  const isSplit = isTeamSession && !!selectedMember
+
+  const headerTaskLabel = isTeamSession
+    ? (taskContent ? `🤝 ${teamName} · ${taskContent.slice(0, 40)}${taskContent.length > 40 ? '...' : ''}` : `🤝 ${teamName}`)
+    : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, backgroundColor: '#1e1e2e', overflow: 'hidden' }}>
@@ -85,16 +207,28 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
         {expertLabel && (
           <span style={{
             background: '#313244',
-            color: '#cba6f7',
+            color: isTeamSession ? (allDone ? '#a6e3a1' : '#89dceb') : '#cba6f7',
             borderRadius: '4px',
             padding: '0.1rem 0.4rem',
             fontSize: '0.7rem',
             whiteSpace: 'nowrap',
-            maxWidth: '160px',
+            maxWidth: '240px',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.3rem',
           }}>
-            🎭 {expertLabel}
+            {isTeamSession ? (allDone ? `✅ ${teamName}` : headerTaskLabel) : `🎭 ${expertLabel}`}
+            {isTeamSession && teamName && (
+              <button
+                onClick={() => navigate(`/?view=swarm&team=${encodeURIComponent(teamName)}`)}
+                style={{ background: 'none', border: 'none', color: '#89b4fa', cursor: 'pointer', fontSize: '0.7rem', padding: 0, whiteSpace: 'nowrap', flexShrink: 0 }}
+                title="管理团队"
+              >
+                ⊞ 管理团队
+              </button>
+            )}
           </span>
         )}
         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: store.wsStatus === 'ready' ? '#a6e3a1' : store.wsStatus === 'terminated' ? '#6c7086' : '#f9e2af' }}>
@@ -112,22 +246,85 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
       {/* ── 进度条 ── */}
       <CompactProgressBar phase={ui.compactPhase} />
 
-      {/* ── 中间内容区 ── */}
-      <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} thinkingBuffer={store.thinkingBuffer} sessionId={sessionId} />
-      </div>
-
-      {/* ── 底部固定输入框 ── */}
-      <div style={{ flexShrink: 0 }}>
-        <MessageInput
-          busy={store.busy}
-          commands={store.commands}
-          sendRequest={(req) => {
-            if (req.type === 'submit_line') store.setBusy(true)
-            sendRequest(req)
-          }}
-          wsStatus={store.wsStatus}
+      {/* ── 成员选择栏（仅团队 session）── */}
+      {isTeamSession && Object.keys(members).length > 0 && (
+        <SwarmMemberBar
+          members={members}
+          selectedMemberId={selectedMemberId}
+          onSelect={setSelectedMemberId}
+          allDone={!!allDone}
         />
+      )}
+
+      {/* ── 内容区（分栏或全宽）── */}
+      <div ref={containerRef} style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'row' }}>
+        {/* Leader pane */}
+        <div style={{
+          flexBasis: isSplit ? `${paneRatio * 100}%` : '100%',
+          flexGrow: 0,
+          flexShrink: 0,
+          minWidth: isSplit ? '30%' : undefined,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          <div style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <TranscriptViewer items={store.transcript} assistantBuffer={store.assistantBuffer} thinkingBuffer={store.thinkingBuffer} sessionId={sessionId} />
+          </div>
+          <div style={{ flexShrink: 0 }}>
+            <MessageInput
+              busy={store.busy}
+              commands={store.commands}
+              sendRequest={sendRequest}
+              wsStatus={store.wsStatus}
+              placeholder={isTeamSession && store.transcript.length === 0 ? '描述你希望团队完成的任务...' : (isTeamSession ? '可向 Leader 补充说明或调整方向...' : undefined)}
+            />
+          </div>
+        </div>
+
+        {/* Resize divider */}
+        {isSplit && (
+          <div
+            onMouseDown={startResize}
+            style={{
+              width: '5px',
+              flexShrink: 0,
+              cursor: 'col-resize',
+              backgroundColor: '#313244',
+              transition: 'background-color 100ms',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#45475a')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#313244')}
+          />
+        )}
+
+        {/* Member pane — render ALL members but show only the selected one.
+            Using display:none instead of conditional rendering preserves SSE
+            connections and accumulated items when switching between members. */}
+        {isSplit && Object.keys(members).length > 0 && (
+          <div style={{
+            flexBasis: `${(1 - paneRatio) * 100}%`,
+            flexGrow: 0,
+            flexShrink: 0,
+            minWidth: '30%',
+            overflow: 'hidden',
+            borderLeft: '1px solid #313244',
+            display: selectedMemberId ? 'block' : 'none',
+          }}>
+            {Object.values(members).map((m) => (
+              <div
+                key={m.agent_id}
+                style={{ height: '100%', display: m.agent_id === selectedMemberId ? 'block' : 'none' }}
+              >
+                <SwarmMemberPane
+                  member={m}
+                  onClose={() => setSelectedMemberId(null)}
+                  runId={currentRunSlug ? `${fetchTeamName}/${currentRunSlug}` : undefined}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {showSettings && <SettingsDrawer onClose={() => setShowSettings(false)} />}
@@ -156,13 +353,18 @@ export default function AppLayout() {
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   const activeSessionId = ui.activeChatSessionId
-  const { sendRequest } = useWebSocket(activeSessionId)
+  const { sendRequest: _rawSendRequest } = useWebSocket(activeSessionId)
   const viewParam = searchParams.get('view') as AppView | null
 
+  // Wrap sendRequest: set busy=true for any request that triggers Agent to continue
+  const sendRequest: typeof _rawSendRequest = (req) => {
+    if (req.type !== 'interrupt' && req.type !== 'list_sessions') {
+      useSessionStore.getState().setBusy(true)
+    }
+    _rawSendRequest(req)
+  }
+
   // Sync route → uiStore on direct URL access (/chat/:id or /?view=xxx)
-  // NOTE: `ui` must NOT be in deps — adding it causes a feedback loop where
-  // setActiveChatSessionId(null) triggers the effect while params.sessionId
-  // still holds the old value, immediately re-setting it.
   useEffect(() => {
     const { activeChatSessionId, setActiveChatSessionId, setActiveView } = useUiStore.getState()
     if (params.sessionId && activeChatSessionId !== params.sessionId) {

@@ -91,10 +91,15 @@ def _convert_messages_to_openai(
     - Anthropic: tool_use / tool_result are content blocks
     - OpenAI: tool_calls on assistant message, tool results are separate messages
     """
+
+    def _clean(s: str) -> str:
+        return s.encode("utf-8", errors="replace").decode("utf-8")
+
     openai_messages: list[dict[str, Any]] = []
 
     if system_prompt:
-        openai_messages.append({"role": "system", "content": system_prompt})
+        clean_sp = _clean(system_prompt)
+        openai_messages.append({"role": "system", "content": clean_sp})
 
     for msg in messages:
         if msg.role == "assistant":
@@ -108,14 +113,18 @@ def _convert_messages_to_openai(
             if tool_results:
                 # Each tool result becomes a separate message with role="tool"
                 for tr in tool_results:
+                    content = tr.content
+                    if isinstance(content, str):
+                        content = _clean(content)
                     openai_messages.append({
                         "role": "tool",
                         "tool_call_id": tr.tool_use_id,
-                        "content": tr.content,
+                        "content": content,
                     })
             if user_blocks:
                 content = _convert_user_content_to_openai(user_blocks)
                 if isinstance(content, str):
+                    content = _clean(content)
                     if content.strip():
                         openai_messages.append({"role": "user", "content": content})
                 elif content:

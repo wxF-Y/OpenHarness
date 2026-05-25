@@ -411,8 +411,8 @@ export default function Sidebar({
                             临时
                           </span>
                           {s.expert_role_label && (
-                            <span style={{ fontSize: '0.7rem', color: '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
-                              🎭 {s.expert_role_label}
+                            <span style={{ fontSize: '0.7rem', color: s.expert_role_label.startsWith('🤝') ? '#89dceb' : '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                              {s.expert_role_label.startsWith('🤝') ? s.expert_role_label : `🎭 ${s.expert_role_label}`}
                             </span>
                           )}
                         </>
@@ -428,8 +428,8 @@ export default function Sidebar({
                           📁 {displayPath}
                         </span>
                         {s.expert_role_label && (
-                          <span style={{ fontSize: '0.7rem', color: '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
-                            🎭 {s.expert_role_label}
+                          <span style={{ fontSize: '0.7rem', color: s.expert_role_label.startsWith('🤝') ? '#89dceb' : '#cba6f7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                            {s.expert_role_label.startsWith('🤝') ? s.expert_role_label : `🎭 ${s.expert_role_label}`}
                           </span>
                         )}
                       </>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 
 from openharness.coordinator.coordinator_mode import is_coordinator_mode
@@ -14,6 +15,38 @@ from openharness.ui.backend_host import run_backend_host
 from openharness.ui.coordinator_drain import drain_coordinator_async_agents
 from openharness.ui.react_launcher import launch_react_tui
 from openharness.ui.runtime import build_runtime, close_runtime, handle_line, start_runtime
+
+
+async def _send_task_worker_idle_notification() -> None:
+    """Send idle_notification to leader mailbox when subprocess task completes.
+
+    Uses OPENHARNESS_MAILBOX_TEAM_PATH env var for run-specific mailbox isolation.
+    Falls back to CLAUDE_CODE_TEAM_NAME / CLAUDE_CODE_AGENT_NAME for template mailbox.
+    No-op if team identity env vars are not set.
+    """
+    try:
+        team_name = os.environ.get("CLAUDE_CODE_TEAM_NAME")
+        agent_name = os.environ.get("CLAUDE_CODE_AGENT_NAME")
+        if not team_name or not agent_name:
+            return
+        agent_id = f"{agent_name}@{team_name}"
+        mailbox_team_path = os.environ.get("OPENHARNESS_MAILBOX_TEAM_PATH")
+
+        from openharness.swarm.mailbox import TeammateMailbox, create_idle_notification, get_team_task_mailbox_dir
+        idle_msg = create_idle_notification(
+            sender=agent_id,
+            recipient="leader",
+            summary=f"{agent_name} finished",
+        )
+        if mailbox_team_path:
+            _t, _s = mailbox_team_path.split("/", 1)
+            inbox_path = get_team_task_mailbox_dir(_t, _s, "leader")
+            leader_mailbox = TeammateMailbox(team_name, "leader", inbox_dir=inbox_path)
+        else:
+            leader_mailbox = TeammateMailbox(team_name=team_name, agent_id="leader")
+        await leader_mailbox.write(idle_msg)
+    except Exception:
+        pass  # Non-critical — swarm_wait also checks task status
 
 
 def _decode_task_worker_line(raw: str) -> str:
@@ -167,6 +200,9 @@ async def run_task_worker(
             break
     finally:
         await close_runtime(bundle)
+        # Send idle_notification to leader after task completes.
+        # Writes to run-specific mailbox if OPENHARNESS_MAILBOX_TEAM_PATH is set.
+        await _send_task_worker_idle_notification()
 
 
 async def run_print_mode(

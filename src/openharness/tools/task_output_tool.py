@@ -32,4 +32,7 @@ class TaskOutputTool(BaseTool):
             output = get_task_manager().read_task_output(arguments.task_id, max_bytes=arguments.max_bytes)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
+        if output:
+            # Sanitize surrogate characters so the output is safe to pass to the API
+            output = output.encode("utf-8", errors="replace").decode("utf-8")
         return ToolResult(output=output or "(no output)")

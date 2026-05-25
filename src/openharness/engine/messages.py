@@ -192,8 +192,13 @@ def sanitize_conversation_messages(messages: list[ConversationMessage]) -> list[
 
 def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
     """Convert a local content block into the provider wire format."""
+
+    def _clean(s: str) -> str:
+        """Strip lone surrogate characters that break UTF-8 API serialization."""
+        return s.encode("utf-8", errors="replace").decode("utf-8")
+
     if isinstance(block, TextBlock):
-        return {"type": "text", "text": block.text}
+        return {"type": "text", "text": _clean(block.text)}
 
     if isinstance(block, ImageBlock):
         return {
@@ -206,12 +211,11 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
         }
 
     if isinstance(block, DocumentBlock):
-        # Unified <attachment> format — consistent with PDF/other file attachments.
         return {
             "type": "text",
             "text": (
                 f"<attachment filename=\"{block.filename}\" mime_type=\"{block.mime_type}\">\n"
-                f"{block.text_content}\n"
+                f"{_clean(block.text_content)}\n"
                 f"</attachment>"
             ),
         }
@@ -227,7 +231,7 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
     if isinstance(block, ThinkingBlock):
         return {
             "type": "thinking",
-            "thinking": block.thinking,
+            "thinking": _clean(block.thinking),
             "signature": block.signature,
         }
 
@@ -242,7 +246,7 @@ def serialize_content_block(block: ContentBlock) -> dict[str, Any]:
     return {
         "type": "tool_result",
         "tool_use_id": block.tool_use_id,
-        "content": block.content,
+        "content": _clean(block.content),
         "is_error": block.is_error,
     }
 

@@ -74,7 +74,7 @@ def atomic_write_text(
     mode: int | None = None,
 ) -> None:
     """Text variant of :func:`atomic_write_bytes`."""
-    atomic_write_bytes(path, data.encode(encoding), mode=mode)
+    atomic_write_bytes(path, data.encode(encoding, errors="replace"), mode=mode)
 
 
 def _resolve_target_mode(path: Path, explicit_mode: int | None) -> int:

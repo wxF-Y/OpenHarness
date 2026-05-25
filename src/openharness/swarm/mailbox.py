@@ -23,8 +23,8 @@ from openharness.swarm.lockfile import exclusive_file_lock
 
 # Only allow slug-safe names: letters, digits, hyphens, underscores, dots (1-64 chars)
 _SAFE_NAME_RE = re.compile(r'^[a-zA-Z0-9_\-.]{1,64}$')
-# agent_id is "name@team" — same charset plus exactly one @
-_SAFE_AGENT_ID_RE = re.compile(r'^[a-zA-Z0-9_\-.]{1,32}@[a-zA-Z0-9_\-.]{1,32}$')
+# agent_id is "name@team" OR simple "name" (for leader/lead etc.)
+_SAFE_AGENT_ID_RE = re.compile(r'^[a-zA-Z0-9_\-.]{1,64}(@[a-zA-Z0-9_\-.]{1,32})?$')
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +106,32 @@ def get_agent_mailbox_dir(team_name: str, agent_id: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# teams-tasks path helpers (for task-run isolation, no name validation)
+# ---------------------------------------------------------------------------
+
+
+def get_team_task_dir(team_name: str, run_slug: str) -> Path:
+    """Return <config_dir>/teams-tasks/<team_name>/<run_slug>/
+
+    No name validation — run_slug can contain Unicode (e.g. Chinese goal names).
+    """
+    base = get_config_dir() / "teams-tasks" / team_name / run_slug
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def get_team_task_mailbox_dir(team_name: str, run_slug: str, agent_id: str) -> Path:
+    """Return <config_dir>/teams-tasks/<team_name>/<run_slug>/agents/<agent_id>/inbox/
+
+    No name validation — bypasses _SAFE_NAME_RE and _SAFE_AGENT_ID_RE.
+    Used for per-run isolated mailboxes supporting concurrent task runs.
+    """
+    inbox = get_config_dir() / "teams-tasks" / team_name / run_slug / "agents" / agent_id / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    return inbox
+
+
+# ---------------------------------------------------------------------------
 # TeammateMailbox
 # ---------------------------------------------------------------------------
 
@@ -117,11 +143,15 @@ class TeammateMailbox:
     inside the agent's inbox directory.  Writes are atomic: the payload is
     first written to a ``.tmp`` file, then renamed into place so that readers
     never see a partial message.
+
+    Pass ``inbox_dir`` to use a custom path (e.g. under teams-tasks/) without
+    name validation — this enables per-run isolated mailboxes for concurrent runs.
     """
 
-    def __init__(self, team_name: str, agent_id: str) -> None:
+    def __init__(self, team_name: str, agent_id: str, inbox_dir: "Path | None" = None) -> None:
         self.team_name = team_name
         self.agent_id = agent_id
+        self._inbox_dir = inbox_dir
 
     # ------------------------------------------------------------------
     # Public API
@@ -129,6 +159,9 @@ class TeammateMailbox:
 
     def get_mailbox_dir(self) -> Path:
         """Return the inbox directory path, creating it if necessary."""
+        if self._inbox_dir is not None:
+            self._inbox_dir.mkdir(parents=True, exist_ok=True)
+            return self._inbox_dir
         return get_agent_mailbox_dir(self.team_name, self.agent_id)
 
     def _lock_path(self) -> Path:

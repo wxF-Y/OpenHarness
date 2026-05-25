@@ -379,12 +379,11 @@ class BackendRegistry:
     def _register_defaults(self) -> None:
         """Register built-in backends that are unconditionally available."""
         from openharness.swarm.subprocess_backend import SubprocessBackend
+        from openharness.swarm.in_process import InProcessBackend
 
         self._backends["subprocess"] = SubprocessBackend()
-        if get_platform_capabilities().supports_swarm_mailbox:
-            from openharness.swarm.in_process import InProcessBackend
-
-            self._backends["in_process"] = InProcessBackend()
+        # InProcessBackend uses asyncio Tasks — always available on all platforms
+        self._backends["in_process"] = InProcessBackend()
 
         # Tmux backend registration is deferred until implementation exists.
         # If a TmuxBackend is available it can be registered via register_backend().

@@ -51,6 +51,9 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── startup ─────────────────────────────────────────────────────────
+    from openharness.swarm.swarm_service import SwarmService
+    app.state.swarm_service = SwarmService()
+
     from openharness.services import cron_scheduler
     try:
         from services.cron_runner import run_agent_turn

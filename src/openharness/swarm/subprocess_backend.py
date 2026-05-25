@@ -70,7 +70,10 @@ class SubprocessBackend:
             # avoids Git Bash on Windows being unable to exec a Windows-
             # pathed python interpreter when bash is itself launched via
             # ``asyncio.create_subprocess_exec`` (see issue #230).
-            extra_env = build_inherited_env_vars()
+            extra_env = build_inherited_env_vars(mailbox_team_path=config.mailbox_team_path)
+            # Pass identity so the subprocess can write idle_notification
+            extra_env["CLAUDE_CODE_AGENT_NAME"] = config.name
+            extra_env["CLAUDE_CODE_TEAM_NAME"] = config.team
             teammate_cmd = get_teammate_command()
             if (
                 teammate_cmd.endswith("python")
@@ -112,6 +115,7 @@ class SubprocessBackend:
             task_id=record.id,
             agent_id=agent_id,
             backend_type=self.type,
+            session_id=config.session_id,
         )
 
     async def send_message(self, agent_id: str, message: TeammateMessage) -> None:

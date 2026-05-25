@@ -114,6 +114,12 @@ class ReactBackendHost:
             memory_backend=self._config.memory_backend,
             include_project_memory=self._config.include_project_memory,
         )
+        # Inject swarm_status callback into tool_metadata so swarm tools can
+        # push WS events when in_process members complete (no polling needed).
+        if self._bundle.engine.tool_metadata is None:
+            self._bundle.engine.tool_metadata = {}
+        self._bundle.engine.tool_metadata["swarm_status_callback"] = self._emit_swarm_status
+        self._bundle.engine.tool_metadata["session_id"] = self._bundle.session_id
         await start_runtime(self._bundle)
         await self._emit(
             BackendEvent.ready(

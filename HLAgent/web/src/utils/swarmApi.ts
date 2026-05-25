@@ -51,18 +51,16 @@ export async function startExpertChat(
 
 export async function launchTeam(
   teamName: string,
-  taskDesc: string,
   navigate: NavigateFunction,
 ): Promise<void> {
-  const r = await fetch('/api/sessions', {
+  const r = await fetch(`/api/swarm/teams/${encodeURIComponent(teamName)}/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ task: '' }),
   })
-  if (!r.ok) throw new Error(`Failed to create session: ${r.status}`)
+  if (!r.ok) throw new Error(`Failed to start team: ${r.status}`)
   const { session_id } = await r.json()
-  const safeTeam = teamName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '')
-  const safeTask = taskDesc.trim().replace(/[\r\n]+/g, ' ')
-  const cmd = safeTask ? `/swarm start ${safeTeam} ${safeTask}` : `/swarm start ${safeTeam}`
-  navigate(`/chat/${session_id}?prefill=${encodeURIComponent(cmd)}&autosubmit=1&from=${encodeURIComponent('/swarm')}`)
+  useUiStore.getState().incrementSidebarRefreshKey()
+  // Navigate to chat — user types task there, Leader handles spawning
+  navigate(`/chat/${session_id}?team=${encodeURIComponent(teamName)}`)
 }

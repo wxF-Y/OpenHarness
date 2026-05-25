@@ -237,7 +237,9 @@ def _write_to_disk(path: str, content: str) -> None:
     except ValueError:
         raise ValueError(f"Invalid cache path: {path}")
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(content, encoding="utf-8")
+    # Sanitize lone surrogates before writing to ensure valid UTF-8 on disk
+    clean = content.encode("utf-8", errors="replace").decode("utf-8")
+    cache_file.write_text(clean, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

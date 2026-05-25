@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     pass
@@ -312,6 +312,16 @@ class TeammateSpawnConfig:
     task_type: Literal["local_agent", "remote_agent", "in_process_teammate"] = "local_agent"
     """Background task type recorded for subprocess-backed teammates."""
 
+    on_status_change: Callable[[list[dict]], None] | None = None
+    """Optional callback invoked when this teammate's status changes."""
+
+    mailbox_team_path: str | None = None
+    """If set, idle_notification is written to teams-tasks/{mailbox_team_path}/agents/leader/inbox/
+    instead of the default teams/{team}/agents/leader/inbox/.
+    Enables per-run isolated mailboxes supporting concurrent task runs.
+    Format: "{template_team}/{run_goal_slug}" (slash-separated, no @).
+    """
+
 
 # ---------------------------------------------------------------------------
 # Spawn result & messaging
@@ -336,6 +346,9 @@ class SpawnResult:
 
     pane_id: PaneId | None = None
     """Pane ID for pane-based backends (tmux / iTerm2)."""
+
+    session_id: str | None = None
+    """Session ID used by this agent (for transcript lookup)."""
 
 
 @dataclass

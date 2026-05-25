@@ -14,9 +14,9 @@ interface Props {
 
 const S = {
   root: { display: 'flex', height: '100%', backgroundColor: '#1e1e2e', color: '#cdd6f4', overflow: 'hidden' } as const,
-  left: { width: '220px', borderRight: '1px solid #313244', display: 'flex', flexDirection: 'column' as const, flexShrink: 0 },
-  middle: { width: '280px', borderRight: '1px solid #313244', overflowY: 'auto' as const, flexShrink: 0 },
-  right: { flex: 1, display: 'flex', flexDirection: 'column' as const, overflow: 'hidden' },
+  left: { width: '220px', borderRight: '1px solid #313244', display: 'flex', flexDirection: 'column' as const, flexShrink: 0, minHeight: 0, overflow: 'hidden' },
+  middle: { width: '280px', borderRight: '1px solid #313244', overflowY: 'auto' as const, flexShrink: 0, minHeight: 0, maxHeight: '100%' },
+  right: { flex: 1, display: 'flex', flexDirection: 'column' as const, overflow: 'hidden', minHeight: 0 },
   sectionLabel: { padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#6c7086', fontWeight: 700, textTransform: 'uppercase' as const },
 }
 
@@ -141,8 +141,8 @@ export default function RoleLibraryPanel({ mode, selectedRoles, onToggle, onConf
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         {/* Left: dept list + search */}
         <div style={S.left}>
           <div style={{ padding: '0.5rem 0.75rem', borderBottom: '1px solid #313244', position: 'relative' }}>
@@ -272,7 +272,7 @@ export default function RoleLibraryPanel({ mode, selectedRoles, onToggle, onConf
       </div>
 
       {/* Bottom: selected tags + confirm (picker mode) or selected count (wizard mode) */}
-      {(selectedRoles.length > 0 || mode === 'picker') && (
+      {mode === 'picker' && (
         <div style={{ borderTop: '1px solid #313244', padding: '0.5rem 0.75rem', backgroundColor: '#181825', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.75rem', color: '#6c7086', flexShrink: 0 }}>
