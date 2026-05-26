@@ -27,14 +27,14 @@ from openharness.tools.mcp_auth_tool import McpAuthTool
 from openharness.tools.mcp_tool import McpToolAdapter
 from openharness.tools.notebook_edit_tool import NotebookEditTool
 from openharness.tools.read_mcp_resource_tool import ReadMcpResourceTool
-from openharness.tools.read_mailbox_tool import ReadMailboxTool
+from openharness.tools.team_read_mailbox_tool import TeamReadMailboxTool
 from openharness.tools.remote_trigger_tool import RemoteTriggerTool
-from openharness.tools.swarm_create_run_tool import SwarmCreateRunTool
-from openharness.tools.swarm_spawn_member_tool import SwarmSpawnMemberTool
-from openharness.tools.swarm_list_members_tool import SwarmListMembersTool
-from openharness.tools.swarm_wait_tool import SwarmWaitTool
-from openharness.tools.swarm_shutdown_member_tool import SwarmShutdownMemberTool
-from openharness.tools.swarm_send_message_tool import SwarmSendMessageTool
+from openharness.tools.team_create_run_tool import TeamCreateRunTool
+from openharness.tools.team_spawn_member_tool import TeamSpawnMemberTool
+from openharness.tools.team_list_members_tool import TeamListMembersTool
+from openharness.tools.team_wait_tool import TeamWaitTool
+from openharness.tools.team_shutdown_member_tool import TeamShutdownMemberTool
+from openharness.tools.team_send_message_tool import TeamSendMessageTool
 from openharness.tools.send_message_tool import SendMessageTool
 from openharness.tools.skill_tool import SkillTool
 from openharness.tools.sleep_tool import SleepTool
@@ -93,13 +93,13 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
         TaskUpdateTool(),
         AgentTool(),
         SendMessageTool(),
-        ReadMailboxTool(),
-        SwarmCreateRunTool(),
-        SwarmSpawnMemberTool(),
-        SwarmListMembersTool(),
-        SwarmWaitTool(),
-        SwarmShutdownMemberTool(),
-        SwarmSendMessageTool(),
+        TeamReadMailboxTool(),
+        TeamCreateRunTool(),
+        TeamSpawnMemberTool(),
+        TeamListMembersTool(),
+        TeamWaitTool(),
+        TeamShutdownMemberTool(),
+        TeamSendMessageTool(),
         TeamCreateTool(),
         TeamDeleteTool(),
     ):

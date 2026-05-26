@@ -15,8 +15,8 @@ from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 logger = logging.getLogger(__name__)
 
 
-class SwarmSpawnMemberInput(BaseModel):
-    """Arguments for spawning a named swarm team member."""
+class TeamSpawnMemberInput(BaseModel):
+    """Arguments for spawning a named team member."""
 
     team: str = Field(description="Template team name")
     member: str = Field(description="Member name (e.g. 'creative-strategist', 'auditor')")
@@ -24,32 +24,32 @@ class SwarmSpawnMemberInput(BaseModel):
     model: str | None = Field(default=None, description="Model override")
     run_id: str = Field(
         description=(
-            "run_id from swarm_create_run (required). Format: '{team}/{goal_slug}'. "
+            "run_id from team_create_run (required). Format: '{team}/{goal_slug}'. "
             "Member state is written to teams-tasks/ and idle_notification "
             "goes to the run's own mailbox (enables concurrent runs without collision)."
         ),
     )
 
 
-class SwarmSpawnMemberTool(BaseTool):
-    """Spawn a named member of a swarm team and start their task.
+class TeamSpawnMemberTool(BaseTool):
+    """Spawn a named member of a team and start their task.
 
     Uses the member's pre-configured role prompt from the team definition.
     The member can receive messages via send_message(task_id='member@team', ...)
     and will send idle_notification to the leader mailbox when done.
     """
 
-    name = "swarm_spawn_member"
+    name = "team_spawn_member"
     description = (
-        "Spawn a named member of a swarm team and start their work. "
-        "Requires run_id from swarm_create_run for proper mailbox isolation. "
+        "Spawn a named member of a team and start their work. "
+        "Requires run_id from team_create_run for proper mailbox isolation. "
         "The member's agent_id is 'member@team'. "
-        "Use send_message(task_id='member@team', run_id=run_id, message='...') to send follow-up instructions. "
-        "Use read_mailbox(team='...') to receive their completion notifications."
+        "Use team_send_message(member='member', run_id=run_id, message='...') to send follow-up instructions. "
+        "Use team_read_mailbox(team='...') to receive their completion notifications."
     )
-    input_model = SwarmSpawnMemberInput
+    input_model = TeamSpawnMemberInput
 
-    async def execute(self, arguments: SwarmSpawnMemberInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamSpawnMemberInput, context: ToolExecutionContext) -> ToolResult:
         tf = read_team_file(arguments.team)
         if tf is None:
             return ToolResult(output=f"Team '{arguments.team}' not found.", is_error=True)
@@ -60,8 +60,8 @@ class SwarmSpawnMemberTool(BaseTool):
         if not resolved_run_id:
             return ToolResult(
                 output=(
-                    "run_id is required for swarm_spawn_member. "
-                    "Call swarm_create_run first to get a run_id, then pass it here."
+                    "run_id is required for team_spawn_member. "
+                    "Call team_create_run first to get a run_id, then pass it here."
                 ),
                 is_error=True,
             )

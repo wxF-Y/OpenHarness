@@ -14,49 +14,49 @@ from openharness.tasks.manager import get_task_manager
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
-class SwarmWaitInput(BaseModel):
-    """Arguments for waiting on swarm team completion."""
+class TeamWaitInput(BaseModel):
+    """Arguments for waiting on team completion."""
 
     team: str = Field(description="Template team name to wait for")
     timeout: int = Field(
         default=30,
         description=(
             "Max seconds to wait before returning a status report (default 30). "
-            "For long-running tasks, call swarm_wait again after reviewing status."
+            "For long-running tasks, call team_wait again after reviewing status."
         ),
     )
     poll_interval: float = Field(default=3.0, description="Seconds between polls (default 3)")
     run_id: str | None = Field(
         default=None,
         description=(
-            "Optional run_id from swarm_create_run (format: '{team}/{goal_slug}'). "
+            "Optional run_id from team_create_run (format: '{team}/{goal_slug}'). "
             "When provided, reads idle_notification from the run's own mailbox "
             "under teams-tasks/ instead of the template team mailbox."
         ),
     )
 
 
-class SwarmWaitTool(BaseTool):
-    """Wait for swarm team members to complete, checking BOTH task status AND mailbox.
+class TeamWaitTool(BaseTool):
+    """Wait for team members to complete, checking BOTH task status AND mailbox.
 
     Polls in two ways:
     1. Task manager: checks if subprocess tasks have completed/failed
     2. Mailbox: checks for idle_notification from InProcess members
 
     Short default timeout (30s) so the Leader gets frequent status updates.
-    The Leader can call swarm_wait again for members that are still running.
+    The Leader can call team_wait again for members that are still running.
     """
 
-    name = "swarm_wait"
+    name = "team_wait"
     description = (
-        "Wait for swarm team members to complete their tasks. "
+        "Wait for team members to complete their tasks. "
         "Returns a status report after timeout (default 30s). "
         "Call again for members still running. "
         "Checks both subprocess task completion and mailbox notifications."
     )
-    input_model = SwarmWaitInput
+    input_model = TeamWaitInput
 
-    async def execute(self, arguments: SwarmWaitInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamWaitInput, context: ToolExecutionContext) -> ToolResult:
         del context
         tf = read_team_file(arguments.team)
         if tf is None:
@@ -73,8 +73,8 @@ class SwarmWaitTool(BaseTool):
         if not arguments.run_id:
             return ToolResult(
                 output=(
-                    "run_id is required for swarm_wait. "
-                    "Pass the run_id returned by swarm_create_run."
+                    "run_id is required for team_wait. "
+                    "Pass the run_id returned by team_create_run."
                 ),
                 is_error=True,
             )
@@ -129,6 +129,10 @@ class SwarmWaitTool(BaseTool):
                     except Exception:
                         pass
                     completed[agent_id] = summary
+                    # Signal completion event (fallback for subprocess members)
+                    if arguments.run_id:
+                        from openharness.swarm.completion_events import signal as _sig
+                        _sig(arguments.run_id, agent_id)
                 elif t.status in ("failed", "killed"):
                     failed[agent_id] = f"task {t.status}: {t.return_code}"
 
@@ -154,6 +158,6 @@ class SwarmWaitTool(BaseTool):
             "still_running": still_running,
             "total": len(members),
             "done_count": len(completed) + len(failed),
-            "hint": "Call swarm_wait again if members are still running." if still_running else "All members done.",
+            "hint": "Call team_wait again if members are still running." if still_running else "All members done.",
         }
         return ToolResult(output=json.dumps(result, ensure_ascii=False, indent=2))

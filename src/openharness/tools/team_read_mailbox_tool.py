@@ -10,14 +10,14 @@ from openharness.swarm.mailbox import TeammateMailbox
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
-class ReadMailboxToolInput(BaseModel):
+class TeamReadMailboxToolInput(BaseModel):
     """Arguments for reading the team leader mailbox."""
 
     team: str = Field(description="Team name to read inbox for")
     run_id: str | None = Field(
         default=None,
         description=(
-            "run_id from swarm_create_run (format: '{team}/{goal_slug}'). "
+            "run_id from team_create_run (format: '{team}/{goal_slug}'). "
             "When provided, reads from the run-specific leader mailbox in teams-tasks/ "
             "instead of the template team directory. "
             "Always provide run_id to avoid creating stale directories in the template team."
@@ -26,22 +26,22 @@ class ReadMailboxToolInput(BaseModel):
     unread_only: bool = Field(default=True, description="Only return unread messages")
 
 
-class ReadMailboxTool(BaseTool):
-    """Read messages sent to the swarm team leader's inbox.
+class TeamReadMailboxTool(BaseTool):
+    """Read messages sent to the team leader's inbox.
 
     Sub-agents send idle_notification and plan_approval messages here.
     Always pass run_id to read from the correct run-specific mailbox.
     """
 
-    name = "read_mailbox"
+    name = "team_read_mailbox"
     description = (
-        "Read messages in the swarm team leader inbox. "
-        "Pass run_id (from swarm_create_run) to read from the run-specific mailbox. "
+        "Read messages in the team leader inbox. "
+        "Pass run_id (from team_create_run) to read from the run-specific mailbox. "
         "Use this to receive idle_notification (task complete) from sub-agents."
     )
-    input_model = ReadMailboxToolInput
+    input_model = TeamReadMailboxToolInput
 
-    async def execute(self, arguments: ReadMailboxToolInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamReadMailboxToolInput, context: ToolExecutionContext) -> ToolResult:
         del context
         try:
             if arguments.run_id:

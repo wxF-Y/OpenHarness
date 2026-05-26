@@ -11,31 +11,31 @@ from openharness.tasks.manager import get_task_manager
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
-class SwarmShutdownMemberInput(BaseModel):
-    """Arguments for shutting down a swarm team member."""
+class TeamShutdownMemberInput(BaseModel):
+    """Arguments for shutting down a team member."""
 
     team: str = Field(description="Team name")
     member: str = Field(description="Member name (e.g. 'creative-strategist')")
     force: bool = Field(default=False, description="Force kill instead of graceful shutdown")
 
 
-class SwarmShutdownMemberTool(BaseTool):
-    """Send a graceful shutdown request to a swarm team member.
+class TeamShutdownMemberTool(BaseTool):
+    """Send a graceful shutdown request to a team member.
 
     Sends a shutdown_request message to the member's mailbox (matching s10 protocol).
     With force=True, immediately kills the underlying task.
     """
 
-    name = "swarm_shutdown_member"
+    name = "team_shutdown_member"
     description = (
-        "Send a graceful shutdown request to a swarm team member. "
+        "Send a graceful shutdown request to a team member. "
         "The member will complete its current step then stop. "
         "Use force=True to immediately terminate. "
         "After shutdown, the member's transcript remains accessible."
     )
-    input_model = SwarmShutdownMemberInput
+    input_model = TeamShutdownMemberInput
 
-    async def execute(self, arguments: SwarmShutdownMemberInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamShutdownMemberInput, context: ToolExecutionContext) -> ToolResult:
         del context
         agent_id = f"{arguments.member}@{arguments.team}"
         tf = read_team_file(arguments.team)

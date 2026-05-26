@@ -34,14 +34,14 @@ def _slugify_goal(goal: str, max_bytes: int = 180) -> str:
     return slug or f"run-{int(time.time())}"
 
 
-class SwarmCreateRunInput(BaseModel):
+class TeamCreateRunInput(BaseModel):
     """Arguments for creating a named task-run directory."""
 
     team: str = Field(description="Template team name (must exist in teams/ directory)")
     goal: str = Field(description="Short English goal slug used as the run directory name (ASCII only, use hyphens, e.g. 'stock-research', 'market-analysis'). MUST be English — no Chinese or Unicode characters.")
 
 
-class SwarmCreateRunTool(BaseTool):
+class TeamCreateRunTool(BaseTool):
     """Create an isolated task-run directory under teams-tasks/{team}/{goal}/.
 
     Clones the template team's member definitions into a fresh run directory.
@@ -50,18 +50,18 @@ class SwarmCreateRunTool(BaseTool):
     enabling concurrent runs of the same team without mailbox interference.
 
     Returns the run_id in "{team}/{goal_slug}" format.
-    Pass this run_id to swarm_spawn_member, swarm_wait, swarm_list_members, etc.
+    Pass this run_id to team_spawn_member, team_wait, team_list_members, etc.
     """
 
-    name = "swarm_create_run"
+    name = "team_create_run"
     description = (
-        "Create a named task-run directory for a swarm team. "
-        "Returns a run_id ('{team}/{goal_slug}') to pass to swarm_spawn_member and swarm_wait. "
+        "Create a named task-run directory for a team. "
+        "Returns a run_id ('{team}/{goal_slug}') to pass to team_spawn_member and team_wait. "
         "Enables concurrent runs of the same team with isolated mailboxes."
     )
-    input_model = SwarmCreateRunInput
+    input_model = TeamCreateRunInput
 
-    async def execute(self, arguments: SwarmCreateRunInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamCreateRunInput, context: ToolExecutionContext) -> ToolResult:
         # Validate template team exists
         tf = read_team_file(arguments.team)
         if tf is None:

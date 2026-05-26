@@ -11,8 +11,8 @@ from openharness.tasks.manager import get_task_manager
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 
 
-class SwarmListMembersInput(BaseModel):
-    """Arguments for listing swarm team members."""
+class TeamListMembersInput(BaseModel):
+    """Arguments for listing team members."""
 
     team: str = Field(description="Template team name")
     run_id: str | None = Field(
@@ -21,17 +21,17 @@ class SwarmListMembersInput(BaseModel):
     )
 
 
-class SwarmListMembersTool(BaseTool):
-    """List all members of a swarm team and their current status.
+class TeamListMembersTool(BaseTool):
+    """List all members of a team and their current status.
 
     Combines team file info with live task status so the status is accurate.
     """
 
-    name = "swarm_list_members"
-    description = "List all members of a swarm team with their actual status (running/completed/failed/not_started)."
-    input_model = SwarmListMembersInput
+    name = "team_list_members"
+    description = "List all members of a team with their actual status (running/completed/failed/not_started)."
+    input_model = TeamListMembersInput
 
-    async def execute(self, arguments: SwarmListMembersInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: TeamListMembersInput, context: ToolExecutionContext) -> ToolResult:
         del context
         # Read from teams-tasks/ when run_id is provided; fall back to template team
         if arguments.run_id:
