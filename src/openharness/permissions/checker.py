@@ -4,37 +4,52 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from openharness.config.settings import PermissionSettings
 from openharness.permissions.modes import PermissionMode
 
 log = logging.getLogger(__name__)
 
+
+def _credential_dir_name() -> str:
+    """Return just the directory name of the active config dir, read from env at call time."""
+    config_dir_env = os.environ.get("OPENHARNESS_CONFIG_DIR")
+    if config_dir_env:
+        return Path(config_dir_env).name
+    return os.environ.get("OPENHARNESS_DIR_NAME", ".hlagent")
+
+
+def _build_sensitive_path_patterns() -> tuple[str, ...]:
+    dir_name = _credential_dir_name()
+    return (
+        # SSH keys and config
+        "*/.ssh/*",
+        # AWS credentials
+        "*/.aws/credentials",
+        "*/.aws/config",
+        # GCP credentials
+        "*/.config/gcloud/*",
+        # Azure credentials
+        "*/.azure/*",
+        # GPG keys
+        "*/.gnupg/*",
+        # Docker credentials
+        "*/.docker/config.json",
+        # Kubernetes credentials
+        "*/.kube/config",
+        # Credential stores for the active harness config dir
+        f"*/{dir_name}/credentials.json",
+        f"*/{dir_name}/copilot_auth.json",
+    )
+
+
 # Paths that are always denied regardless of permission mode or user config.
-# These protect high-value credential and key material from LLM-directed access
-# (including via prompt injection).  Patterns use fnmatch syntax and are matched
-# against the fully-resolved absolute path produced by the query engine.
-SENSITIVE_PATH_PATTERNS: tuple[str, ...] = (
-    # SSH keys and config
-    "*/.ssh/*",
-    # AWS credentials
-    "*/.aws/credentials",
-    "*/.aws/config",
-    # GCP credentials
-    "*/.config/gcloud/*",
-    # Azure credentials
-    "*/.azure/*",
-    # GPG keys
-    "*/.gnupg/*",
-    # Docker credentials
-    "*/.docker/config.json",
-    # Kubernetes credentials
-    "*/.kube/config",
-    # OpenHarness own credential stores
-    "*/.openharness/credentials.json",
-    "*/.openharness/copilot_auth.json",
-)
+# Module-level constant kept for backward compatibility; prefer PermissionChecker
+# which rebuilds patterns from env vars at construction time.
+SENSITIVE_PATH_PATTERNS: tuple[str, ...] = _build_sensitive_path_patterns()
 
 
 @dataclass(frozen=True)
@@ -59,6 +74,7 @@ class PermissionChecker:
 
     def __init__(self, settings: PermissionSettings) -> None:
         self._settings = settings
+        self._sensitive_patterns: tuple[str, ...] = _build_sensitive_path_patterns()
         # Parse path rules from settings
         self._path_rules: list[PathRule] = []
         for rule in getattr(settings, "path_rules", []):
@@ -87,7 +103,7 @@ class PermissionChecker:
         # driven access to credential files.
         if file_path:
             for candidate_path in _policy_match_paths(file_path):
-                for pattern in SENSITIVE_PATH_PATTERNS:
+                for pattern in self._sensitive_patterns:
                     if fnmatch.fnmatch(candidate_path, pattern):
                         return PermissionDecision(
                             allowed=False,

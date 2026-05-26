@@ -27,7 +27,7 @@ Use this skill when the user wants to:
 Choose the target deliberately:
 
 - Built-in OpenHarness skills live in `src/openharness/skills/bundled/content/*.md`.
-- User skills for `oh` live in `~/.openharness/skills/<skill-dir>/SKILL.md`.
+- User skills live in `~/.hlagent/skills/<skill-dir>/SKILL.md`.
 - Private `ohmo` skills live in `~/.ohmo/skills/<skill-dir>/SKILL.md`.
 - Plugin skills live in `<plugin-root>/skills/<skill-dir>/SKILL.md`.
 

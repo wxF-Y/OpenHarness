@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -24,7 +25,24 @@ _USER_COMPAT_SKILL_DIRS = (
     (".claude", "skills"),
     (".agents", "skills"),
 )
-_DEFAULT_PROJECT_SKILL_DIRS = (".openharness/skills", ".agents/skills", ".claude/skills")
+
+
+def _default_project_skill_dirs() -> tuple[str, ...]:
+    dir_name = (
+        os.environ.get("OPENHARNESS_PROJECT_DIR_NAME")
+        or os.environ.get("OPENHARNESS_DIR_NAME")
+        or ".hlagent"
+    )
+    dirs = [f"{dir_name}/skills"]
+    if dir_name not in (".agents",):
+        dirs.append(".agents/skills")
+    if dir_name not in (".claude",):
+        dirs.append(".claude/skills")
+    return tuple(dirs)
+
+
+# Evaluated once at import time; OPENHARNESS_PROJECT_DIR_NAME must be set before first import.
+_DEFAULT_PROJECT_SKILL_DIRS = _default_project_skill_dirs()
 
 
 def get_user_skills_dir() -> Path:

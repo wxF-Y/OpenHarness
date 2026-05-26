@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from openharness.config.paths import get_config_dir
 from openharness.config.settings import Settings
 from openharness.memory.paths import get_project_memory_dir
 from openharness.services.autodream.backup import create_memory_backup, diff_memory_dirs
@@ -154,7 +155,7 @@ async def start_dream_now(
     env = {
         _CHILD_ENV: "1",
         "OPENHARNESS_AUTODREAM_MEMORY_DIR": str(resolved_memory_dir),
-        "OPENHARNESS_CONFIG_DIR": os.environ.get("OPENHARNESS_CONFIG_DIR", str(Path.home() / ".openharness")),
+        "OPENHARNESS_CONFIG_DIR": str(get_config_dir()),
         "OPENHARNESS_PROFILE": settings.active_profile,
         "PYTHONPATH": str(src_root) + ((os.pathsep + existing_pythonpath) if existing_pythonpath else ""),
     }

@@ -31,7 +31,10 @@ _ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*m")
 
 def _config_file_path_hint() -> str:
     """Return the actual settings file path for use in error messages."""
-    config_dir = os.environ.get("OPENHARNESS_CONFIG_DIR", str(Path.home() / ".openharness"))
+    config_dir = os.environ.get(
+        "OPENHARNESS_CONFIG_DIR",
+        str(Path.home() / os.environ.get("OPENHARNESS_DIR_NAME", ".hlagent")),
+    )
     return str(Path(config_dir) / "settings.json")
 
 
@@ -561,7 +564,7 @@ class Settings(BaseModel):
     allow_project_skills: bool = True
     project_skill_dirs: list[str] = Field(
         default_factory=lambda: [
-            f"{os.environ.get('OPENHARNESS_PROJECT_DIR_NAME', '.openharness')}/skills",
+            f"{os.environ.get('OPENHARNESS_PROJECT_DIR_NAME', '.hlagent')}/skills",
             ".agents/skills",
             ".claude/skills",
         ]

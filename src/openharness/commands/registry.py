@@ -1066,7 +1066,7 @@ def create_default_command_registry(
                 )
             )
         manager.store_profile_credential(profile_name, "api_key", api_key)
-        return CommandResult(message="Stored API key in ~/.openharness/settings.json")
+        return CommandResult(message=f"Stored API key in {get_config_dir() / 'settings.json'}")
 
     async def _logout_handler(_: str, context: CommandContext) -> CommandResult:
         del context
@@ -1702,7 +1702,7 @@ def create_default_command_registry(
             f"- feedback_log: {get_feedback_log_path()}",
             f"- api_base_url: {settings.base_url or '(default Anthropic-compatible endpoint)'}",
             "- network: enabled only for provider and explicit web/MCP calls",
-            "- storage: local files under ~/.openharness and project .openharness",
+            f"- storage: local files under {get_config_dir()} and project {get_project_config_dir(context.cwd).name}",
         ]
         return CommandResult(message="\n".join(lines))
 

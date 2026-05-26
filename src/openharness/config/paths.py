@@ -1,6 +1,8 @@
 """Path resolution for OpenHarness configuration and data directories.
 
-Follows XDG-like conventions with ~/.openharness/ as the default base directory.
+Follows XDG-like conventions. The base directory name defaults to the value of
+OPENHARNESS_DIR_NAME (fallback: ".openharness") but is overridden entirely by
+OPENHARNESS_CONFIG_DIR when that is set.
 """
 
 from __future__ import annotations
@@ -8,9 +10,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-_DEFAULT_BASE_DIR = ".openharness"
-_DEFAULT_PROJECT_DIR = ".openharness"
 _CONFIG_FILE_NAME = "settings.json"
+
+
+def _default_dir_name() -> str:
+    """Return the base directory name, read from env at call time."""
+    return os.environ.get("OPENHARNESS_DIR_NAME", ".hlagent")
 
 
 def get_config_dir() -> Path:
@@ -18,13 +23,13 @@ def get_config_dir() -> Path:
 
     Resolution order:
     1. OPENHARNESS_CONFIG_DIR environment variable
-    2. ~/.openharness/
+    2. ~/<OPENHARNESS_DIR_NAME>/  (default: ~/.hlagent/)
     """
     env_dir = os.environ.get("OPENHARNESS_CONFIG_DIR")
     if env_dir:
         config_dir = Path(env_dir)
     else:
-        config_dir = Path.home() / _DEFAULT_BASE_DIR
+        config_dir = Path.home() / _default_dir_name()
 
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
@@ -103,11 +108,15 @@ def get_cron_registry_path() -> Path:
 def get_project_config_dir(cwd: str | Path) -> Path:
     """Return the per-project configuration directory.
 
-    The directory name defaults to ``.openharness`` but can be overridden via
-    the ``OPENHARNESS_PROJECT_DIR_NAME`` environment variable (e.g. set to
-    ``.hlagent`` by HLAgent's main.py to keep naming consistent).
+    Resolution order:
+    1. OPENHARNESS_PROJECT_DIR_NAME environment variable
+    2. OPENHARNESS_DIR_NAME environment variable
+    3. ".hlagent" (built-in default)
     """
-    dir_name = os.environ.get("OPENHARNESS_PROJECT_DIR_NAME", _DEFAULT_PROJECT_DIR)
+    dir_name = os.environ.get(
+        "OPENHARNESS_PROJECT_DIR_NAME",
+        _default_dir_name(),
+    )
     project_dir = Path(cwd).resolve() / dir_name
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir
