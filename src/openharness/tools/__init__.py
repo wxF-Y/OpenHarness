@@ -37,7 +37,9 @@ from openharness.tools.team_shutdown_member_tool import TeamShutdownMemberTool
 from openharness.tools.team_send_message_tool import TeamSendMessageTool
 from openharness.tools.team_request_plan_tool import TeamRequestPlanTool
 from openharness.tools.team_review_plan_tool import TeamReviewPlanTool
-from openharness.tools.send_message_tool import SendMessageToolfrom openharness.tools.skill_tool import SkillTool
+from openharness.tools.team_request_shutdown_tool import TeamRequestShutdownTool
+from openharness.tools.send_message_tool import SendMessageTool
+from openharness.tools.skill_tool import SkillTool
 from openharness.tools.sleep_tool import SleepTool
 from openharness.tools.task_create_tool import TaskCreateTool
 from openharness.tools.task_get_tool import TaskGetTool
@@ -103,6 +105,7 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
         TeamSendMessageTool(),
         TeamRequestPlanTool(),
         TeamReviewPlanTool(),
+        TeamRequestShutdownTool(),
         TeamCreateTool(),
         TeamDeleteTool(),
     ):
