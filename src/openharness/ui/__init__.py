@@ -1,5 +1,11 @@
-"""UI exports."""
+"""OpenHarness session runtime exports."""
 
-from openharness.ui.app import run_print_mode, run_repl
+from openharness.ui.runtime import build_runtime, close_runtime, handle_line, handle_message, start_runtime
 
-__all__ = ["run_print_mode", "run_repl"]
+__all__ = [
+    "build_runtime",
+    "close_runtime",
+    "handle_line",
+    "handle_message",
+    "start_runtime",
+]
