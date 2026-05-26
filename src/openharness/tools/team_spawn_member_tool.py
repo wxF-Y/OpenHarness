@@ -29,6 +29,17 @@ class TeamSpawnMemberInput(BaseModel):
             "goes to the run's own mailbox (enables concurrent runs without collision)."
         ),
     )
+    blocked_by: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional list of member names that must complete before this member is spawned. "
+            "e.g. ['researcher', 'analyst']. Waits up to dependency_timeout seconds total."
+        ),
+    )
+    dependency_timeout: int = Field(
+        default=120,
+        description="Total seconds to wait for blocked_by dependencies to complete (default 120).",
+    )
 
 
 class TeamSpawnMemberTool(BaseTool):
@@ -41,11 +52,12 @@ class TeamSpawnMemberTool(BaseTool):
 
     name = "team_spawn_member"
     description = (
-        "Spawn a named member of a team and start their work. "
+        "Spawn a named member of a swarm team and start their work. "
         "Requires run_id from team_create_run for proper mailbox isolation. "
+        "Use blocked_by=['member1','member2'] to wait for dependencies to complete before spawning. "
         "The member's agent_id is 'member@team'. "
-        "Use team_send_message(member='member', run_id=run_id, message='...') to send follow-up instructions. "
-        "Use team_read_mailbox(team='...') to receive their completion notifications."
+        "Use team_send_message to send follow-up instructions. "
+        "Use team_read_mailbox to receive their completion notifications."
     )
     input_model = TeamSpawnMemberInput
 
@@ -67,6 +79,39 @@ class TeamSpawnMemberTool(BaseTool):
             )
 
         agent_id = f"{arguments.member}@{arguments.team}"
+
+        # Dependency scheduling: wait for blocked_by members to complete
+        if arguments.blocked_by:
+            from openharness.swarm.completion_events import wait_for_completion
+            from openharness.tasks.manager import get_task_manager as _gtm
+
+            def _find_dep_task(dep_agent_id: str):
+                all_tasks = _gtm().list_tasks()
+                for t in reversed(all_tasks):
+                    if f"Teammate: {dep_agent_id}" in (t.description or ""):
+                        return t
+                return None
+
+            timeout_per_dep = float(arguments.dependency_timeout) / len(arguments.blocked_by)
+            for dep_name in arguments.blocked_by:
+                dep_agent_id = f"{dep_name}@{arguments.team}"
+                done = await wait_for_completion(
+                    run_id=arguments.run_id,
+                    agent_id=dep_agent_id,
+                    timeout=timeout_per_dep,
+                )
+                if not done:
+                    dep_task = _find_dep_task(dep_agent_id)
+                    if dep_task and dep_task.status in ("failed", "killed"):
+                        return ToolResult(
+                            output=f"Dependency '{dep_name}' failed (status={dep_task.status}). Cannot spawn '{arguments.member}'.",
+                            is_error=True,
+                        )
+                    return ToolResult(
+                        output=f"Dependency '{dep_name}' did not complete within {timeout_per_dep:.0f}s. Cannot spawn '{arguments.member}'.",
+                        is_error=True,
+                    )
+
         member = tf.members.get(agent_id)
         role_prompt = member.prompt if member else None
 
