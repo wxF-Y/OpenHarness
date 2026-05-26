@@ -36,7 +36,7 @@ function CommandPicker({ hints, selected, onSelect }: CommandPickerProps) {
 
 // Commands that trigger a SelectModal via select_command instead of submit_line
 const SELECTABLE_COMMANDS = new Set([
-  '/provider', '/model', '/theme', '/output-style', '/permissions',
+  '/provider', '/model', '/output-style', '/permissions',
   '/resume', '/effort', '/passes', '/turns', '/fast', '/vim', '/voice',
 ])
 

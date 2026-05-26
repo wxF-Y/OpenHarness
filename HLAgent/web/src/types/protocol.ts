@@ -68,7 +68,6 @@ export type BackendEventType =
 export interface AppState {
   model: string
   permission_mode: string
-  theme: string
   cwd: string
   provider: string
   auth_status: string

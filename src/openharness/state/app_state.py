@@ -11,7 +11,6 @@ class AppState:
 
     model: str
     permission_mode: str
-    theme: str
     cwd: str = "."
     provider: str = "unknown"
     auth_status: str = "missing"

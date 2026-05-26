@@ -219,7 +219,6 @@ def _state_payload(state: AppState) -> dict[str, Any]:
         "auth_status": state.auth_status,
         "base_url": state.base_url,
         "permission_mode": _format_permission_mode(state.permission_mode),
-        "theme": state.theme,
         "vim_enabled": state.vim_enabled,
         "voice_enabled": state.voice_enabled,
         "voice_available": state.voice_available,

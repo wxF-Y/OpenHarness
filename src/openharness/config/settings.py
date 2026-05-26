@@ -569,7 +569,6 @@ class Settings(BaseModel):
     mcp_servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
     # UI
-    theme: str = "default"
     output_style: str = "default"
     vim_mode: bool = False
     voice_mode: bool = False

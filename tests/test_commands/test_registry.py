@@ -56,7 +56,6 @@ def _make_context(tmp_path: Path) -> CommandContext:
             AppState(
                 model="claude-test",
                 permission_mode="default",
-                theme="default",
                 keybindings={},
             )
         ),
@@ -104,7 +103,7 @@ async def test_stop_command_explains_interrupt_paths(tmp_path: Path, monkeypatch
     result = await command.handler(args, CommandContext(engine=_make_engine(tmp_path), cwd=str(tmp_path)))
 
     assert "/stop" in result.message
-    assert "Esc/Ctrl+C" in result.message
+    assert "Ctrl+C" in result.message
 
 
 @pytest.mark.asyncio

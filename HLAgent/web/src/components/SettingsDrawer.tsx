@@ -9,7 +9,6 @@ interface Settings {
   vim_mode: boolean
   voice_mode: boolean
   output_style: string
-  theme: string
   model: string
   base_url?: string
   api_format?: string

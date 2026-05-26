@@ -77,7 +77,7 @@ class CommandResult:
     message: str | None = None
     should_exit: bool = False
     clear_screen: bool = False
-    replay_messages: list | None = None  # ConversationMessage list to replay in TUI
+    replay_messages: list | None = None  # ConversationMessage list to replay
     continue_pending: bool = False
     continue_turns: int | None = None
     refresh_runtime: bool = False
@@ -705,7 +705,7 @@ def create_default_command_registry(
                 replay_messages=messages,
             )
 
-        # /resume — list sessions (for the TUI to show a picker)
+        # /resume — list sessions
         sessions = context.session_backend.list_snapshots(context.cwd, limit=10)
         if not sessions:
             # Fall back to latest.json
@@ -1223,8 +1223,7 @@ def create_default_command_registry(
         return CommandResult(
             message=(
                 "No active turn is running in this command handler. "
-                "While the TUI is running, type /stop or press Esc/Ctrl+C to interrupt the current turn. "
-                "In ohmo remote channels, send /stop."
+                "Press Ctrl+C or send /stop to interrupt the current turn."
             )
         )
 
@@ -1434,7 +1433,7 @@ def create_default_command_registry(
             lines.extend(f"- {model}" for model in profile.allowed_models)
         else:
             lines.append("Available models: unrestricted for this profile")
-            lines.append("Use /model add MODEL to pin switchable models for the TUI selector.")
+            lines.append("Use /model add MODEL to pin switchable models for the selector.")
         return "\n".join(lines)
 
     async def _model_handler(args: str, context: CommandContext) -> CommandResult:
@@ -1727,7 +1726,6 @@ def create_default_command_registry(
         return CommandResult(
             message=(
                 "# Release Notes\n\n"
-                "- React TUI is now the default `oh` interface.\n"
                 "- Added richer session, files, bridge, agent, copy, rewind, effort, passes, and privacy commands.\n"
                 "- Expanded real-model validation across tools, MCP, tasks, plugins, notebook, LSP, cron, and worktree flows.\n"
             )
@@ -2213,7 +2211,7 @@ def create_default_command_registry(
     registry.register(
         SlashCommand(
             "permissions",
-            "Show or update permission mode; Tab in the TUI opens the mode picker",
+            "Show or update permission mode",
             _permissions_handler,
             remote_invocable=False,
             remote_admin_opt_in=True,
@@ -2233,7 +2231,7 @@ def create_default_command_registry(
     registry.register(SlashCommand("passes", "Show or update reasoning pass count", _passes_handler))
     registry.register(SlashCommand("turns", "Show or update maximum agentic turn count", _turns_handler))
     registry.register(SlashCommand("continue", "Continue the previous tool loop if it was interrupted", _continue_handler))
-    registry.register(SlashCommand("stop", "Interrupt the running turn from TUI/ohmo channels", _stop_handler))
+    registry.register(SlashCommand("stop", "Interrupt the running turn", _stop_handler))
     registry.register(
         SlashCommand(
             "provider",

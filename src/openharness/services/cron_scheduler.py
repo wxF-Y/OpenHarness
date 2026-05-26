@@ -30,11 +30,6 @@ from openharness.services.cron import (
 from openharness.sandbox import SandboxUnavailableError
 from openharness.utils.shell import create_shell_subprocess
 
-try:
-    from ohmo.gateway.config import load_gateway_config  # type: ignore[import]
-except Exception:
-    load_gateway_config = None  # type: ignore[assignment]
-
 
 NOTIFICATION_OUTPUT_LIMIT = 3500
 
@@ -285,8 +280,6 @@ def _command_for_job(job: dict[str, Any]) -> str:
     agent_cli = os.environ.get("OPENHARNESS_AGENT_CLI", "openharness")
     parts = [agent_cli]
     profile = payload.get("profile") or job.get("provider_profile")
-    if profile is None and load_gateway_config is not None:
-        profile = load_gateway_config().provider_profile
     if profile:
         parts.extend(["--profile", str(profile)])
     parts.extend(

@@ -254,7 +254,6 @@ def _build_app_state(
         AppState(
             model=settings.model,
             permission_mode=settings.permission.mode.value,
-            theme=settings.theme,
             cwd=cwd,
             provider=provider.name,
             auth_status=auth_status(settings),
@@ -554,7 +553,6 @@ def sync_app_state(bundle: RuntimeBundle) -> None:
     bundle.app_state.set(
         model=settings.model,
         permission_mode=settings.permission.mode.value,
-        theme=settings.theme,
         cwd=bundle.cwd,
         provider=provider.name,
         auth_status=auth_status(settings),
