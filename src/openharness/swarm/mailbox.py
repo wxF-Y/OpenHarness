@@ -39,6 +39,8 @@ MessageType = Literal[
     "sandbox_permission_response",
     "shutdown",
     "idle_notification",
+    "plan_approval_request",
+    "plan_approval_response",
 ]
 
 
@@ -311,6 +313,42 @@ def create_idle_notification(
     return _make_message(
         "idle_notification", sender, recipient, {"summary": summary}
     )
+
+
+def create_plan_approval_request_message(
+    sender: str,
+    recipient: str,
+    task: str,
+    request_id: str,
+) -> MailboxMessage:
+    """Create a plan_approval_request message from Leader to Teammate."""
+    return _make_message(
+        "plan_approval_request", sender, recipient,
+        {"task": task, "request_id": request_id},
+    )
+
+
+def create_plan_approval_response_message(
+    sender: str,
+    recipient: str,
+    request_id: str,
+    approve: bool,
+    feedback: str = "",
+) -> MailboxMessage:
+    """Create a plan_approval_response message from Leader to Teammate."""
+    return _make_message(
+        "plan_approval_response", sender, recipient,
+        {"request_id": request_id, "approve": approve, "feedback": feedback},
+    )
+
+
+def create_shutdown_request_with_tracking(
+    sender: str,
+    recipient: str,
+    request_id: str,
+) -> MailboxMessage:
+    """Create a shutdown request message with request_id for confirmation tracking."""
+    return _make_message("shutdown", sender, recipient, {"request_id": request_id})
 
 
 # ---------------------------------------------------------------------------
