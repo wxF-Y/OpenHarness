@@ -43,3 +43,4 @@ uv.lock
 HLAgent/web/e2e/
 HLAgent/web/playwright.config.ts
 HLAgent/web/test-results/
+/.claude/settings.local.json
