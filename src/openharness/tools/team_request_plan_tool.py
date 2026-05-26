@@ -29,9 +29,9 @@ class TeamRequestPlanTool(BaseTool):
 
     name = "team_request_plan"
     description = (
-        "Request a swarm team member to submit an execution plan for Leader review. "
-        "Returns request_id to use with team_review_plan. "
-        "The member will receive the request in their inbox and should respond with a plan."
+        "Ask a team member to submit an execution plan before starting work. "
+        "Use before team_spawn_member when the task is complex and you want to review the approach first. "
+        "Returns request_id; call team_review_plan to approve or reject the plan."
     )
     input_model = TeamRequestPlanInput
 

@@ -18,7 +18,7 @@ class TeamDeleteTool(BaseTool):
     """Delete an in-memory team."""
 
     name = "team_delete"
-    description = "Delete an in-memory team."
+    description = "Delete an in-memory Coordinator Mode team. Has no effect on Swarm file-based task runs."
     input_model = TeamDeleteToolInput
 
     async def execute(self, arguments: TeamDeleteToolInput, context: ToolExecutionContext) -> ToolResult:

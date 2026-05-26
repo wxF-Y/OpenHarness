@@ -28,7 +28,7 @@ class TeamListMembersTool(BaseTool):
     """
 
     name = "team_list_members"
-    description = "List all members of a team with their actual status (running/completed/failed/not_started)."
+    description = "List all team members with their current status (running/completed/failed/not_started). Pass run_id to check a specific task run's live status."
     input_model = TeamListMembersInput
 
     async def execute(self, arguments: TeamListMembersInput, context: ToolExecutionContext) -> ToolResult:

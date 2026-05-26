@@ -29,9 +29,9 @@ class TeamRequestShutdownTool(BaseTool):
 
     name = "team_request_shutdown"
     description = (
-        "Send a graceful shutdown request to a swarm team member with request_id tracking. "
-        "Returns request_id to check if the member acknowledged the shutdown. "
-        "Use team_shutdown_member(force=True) if you need immediate termination."
+        "Send a graceful shutdown request to a team member with acknowledgment tracking. "
+        "Unlike team_shutdown_member, this returns a request_id so you can confirm the member received and accepted the shutdown. "
+        "Use team_shutdown_member(force=True) for immediate termination without confirmation."
     )
     input_model = TeamRequestShutdownInput
 

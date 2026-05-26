@@ -30,9 +30,9 @@ class TeamReviewPlanTool(BaseTool):
 
     name = "team_review_plan"
     description = (
-        "Approve or reject a swarm team member's execution plan. "
-        "Use request_id from team_request_plan. "
-        "Set approve=False and provide feedback to ask the member to revise their plan."
+        "Approve or reject a team member's submitted plan using request_id from team_request_plan. "
+        "Set approve=False with feedback to send the plan back for revision. "
+        "Once approved, the member will proceed with execution."
     )
     input_model = TeamReviewPlanInput
 

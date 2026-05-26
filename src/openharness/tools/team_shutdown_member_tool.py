@@ -28,10 +28,9 @@ class TeamShutdownMemberTool(BaseTool):
 
     name = "team_shutdown_member"
     description = (
-        "Send a graceful shutdown request to a team member. "
-        "The member will complete its current step then stop. "
-        "Use force=True to immediately terminate. "
-        "After shutdown, the member's transcript remains accessible."
+        "Stop a team member: graceful (completes current step then exits) or force=True (immediate kill). "
+        "For confirmed acknowledgment of shutdown, use team_request_shutdown instead. "
+        "The member's transcript remains accessible after shutdown."
     )
     input_model = TeamShutdownMemberInput
 

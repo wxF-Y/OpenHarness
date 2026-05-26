@@ -35,9 +35,9 @@ class TeamReadMailboxTool(BaseTool):
 
     name = "team_read_mailbox"
     description = (
-        "Read messages in the team leader inbox. "
-        "Pass run_id (from team_create_run) to read from the run-specific mailbox. "
-        "Use this to receive idle_notification (task complete) from sub-agents."
+        "Read messages in the team leader inbox (idle_notification, plan_approval_request, etc.). "
+        "Use this for real-time message checking or when you want to process messages one by one. "
+        "To wait until all members finish, use team_wait instead."
     )
     input_model = TeamReadMailboxToolInput
 

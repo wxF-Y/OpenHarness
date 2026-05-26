@@ -37,9 +37,9 @@ class TeamSendMessageTool(BaseTool):
 
     name = "team_send_message"
     description = (
-        "Send a message or follow-up instruction to a team member. "
-        "Requires run_id to write to the correct run-specific member inbox. "
-        "The member will receive this message via their inbox on their next turn."
+        "Send a follow-up instruction or clarification to a running team member. "
+        "The member reads it from their inbox on their next turn. "
+        "Use after team_spawn_member when you need to adjust or supplement the original task."
     )
     input_model = TeamSendMessageInput
 

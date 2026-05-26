@@ -19,7 +19,7 @@ class TeamCreateTool(BaseTool):
     """Create an in-memory team."""
 
     name = "team_create"
-    description = "Create a lightweight in-memory team for agent tasks."
+    description = "Create an in-memory team for Coordinator Mode (lightweight multi-agent collaboration without file persistence). For Swarm file-based task runs, use team_create_run instead."
     input_model = TeamCreateToolInput
 
     async def execute(self, arguments: TeamCreateToolInput, context: ToolExecutionContext) -> ToolResult:

@@ -52,12 +52,9 @@ class TeamSpawnMemberTool(BaseTool):
 
     name = "team_spawn_member"
     description = (
-        "Spawn a named member of a swarm team and start their work. "
-        "Requires run_id from team_create_run for proper mailbox isolation. "
-        "Use blocked_by=['member1','member2'] to wait for dependencies to complete before spawning. "
-        "The member's agent_id is 'member@team'. "
-        "Use team_send_message to send follow-up instructions. "
-        "Use team_read_mailbox to receive their completion notifications."
+        "**Second step**: spawn a team member and assign their task (requires run_id from team_create_run). "
+        "Use blocked_by=['member1'] to enforce execution order — member waits until dependencies complete. "
+        "After spawning all members, use team_wait to wait for completion or team_read_mailbox to poll messages."
     )
     input_model = TeamSpawnMemberInput
 

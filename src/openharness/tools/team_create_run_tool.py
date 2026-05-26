@@ -55,8 +55,8 @@ class TeamCreateRunTool(BaseTool):
 
     name = "team_create_run"
     description = (
-        "Create a named task-run directory for a team. "
-        "Returns a run_id ('{team}/{goal_slug}') to pass to team_spawn_member and team_wait. "
+        "**First step** of every team task run: create an isolated task-run directory. "
+        "Returns run_id ('{team}/{goal_slug}') required by team_spawn_member, team_wait, team_list_members, team_send_message, etc. "
         "Enables concurrent runs of the same team with isolated mailboxes."
     )
     input_model = TeamCreateRunInput

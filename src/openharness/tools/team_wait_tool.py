@@ -49,10 +49,9 @@ class TeamWaitTool(BaseTool):
 
     name = "team_wait"
     description = (
-        "Wait for team members to complete their tasks. "
-        "Returns a status report after timeout (default 30s). "
-        "Call again for members still running. "
-        "Checks both subprocess task completion and mailbox notifications."
+        "Wait for all team members to complete and return a status report. "
+        "Best for 'spawn-all-then-wait' patterns; returns after timeout (default 30s) — call again if members are still running. "
+        "To process individual messages as they arrive, use team_read_mailbox instead."
     )
     input_model = TeamWaitInput
 
