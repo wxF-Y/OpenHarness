@@ -19,7 +19,6 @@ from openharness.commands import MemoryCommandBackend
 from openharness.config.settings import CLAUDE_MODEL_ALIAS_OPTIONS, resolve_model_setting
 from openharness.bridge import get_bridge_manager
 from openharness.coordinator.coordinator_mode import is_coordinator_mode
-from openharness.themes import list_themes
 from openharness.engine.stream_events import (
     AssistantTextDelta,
     AssistantThinkingDelta,
@@ -461,8 +460,6 @@ class ReactBackendHost:
             return f"/resume {value}" if value else "/resume"
         if command == "permissions":
             return f"/permissions {value}"
-        if command == "theme":
-            return f"/theme {value}"
         if command == "output-style":
             return f"/output-style {value}"
         if command == "effort":
@@ -581,13 +578,6 @@ class ReactBackendHost:
                     "description": "Block all write operations",
                     "active": settings.permission.mode.value == "plan",
                 },
-            ])
-            return
-
-        if command == "theme":
-            await self._emit_select("Theme", "theme", [
-                {"value": name, "label": name, "active": name == settings.theme}
-                for name in list_themes()
             ])
             return
 
