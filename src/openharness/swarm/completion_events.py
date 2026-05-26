@@ -16,12 +16,14 @@ def _key(run_id: str, agent_id: str) -> str:
 
 
 def signal(run_id: str, agent_id: str) -> None:
-    """Signal that agent_id in run_id has completed. Idempotent."""
+    """Signal that agent_id in run_id has completed. Idempotent.
+
+    Creates the event if it doesn't exist yet, so signal-before-wait works correctly.
+    """
     k = _key(run_id, agent_id)
-    ev = _events.get(k)
-    if ev:
-        ev.set()
-        logger.debug("completion_events: signalled %s", k)
+    ev = _events.setdefault(k, asyncio.Event())
+    ev.set()
+    logger.debug("completion_events: signalled %s", k)
 
 
 async def wait_for_completion(run_id: str, agent_id: str, timeout: float) -> bool:
