@@ -1,0 +1,13 @@
+workflow: tweak
+phase: archive
+build_mode: direct
+isolation: branch
+verify_mode: full
+design_doc: null
+plan: null
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-05-26-tune-team-tools-verify.md
+branch_status: handled
+verified_at: 2026-05-26
+archived: true
+build_command: python -c "from openharness.tools import create_default_tool_registry; create_default_tool_registry(); print('OK')"
