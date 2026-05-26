@@ -374,6 +374,13 @@ async def _run_query_loop(
             else:
                 leader_mailbox = TeammateMailbox(team_name=config.team, agent_id="leader")
             await leader_mailbox.write(idle_msg)
+            # Signal completion for blocked_by dependency scheduling
+            if config.mailbox_team_path:
+                try:
+                    from openharness.swarm.completion_events import signal as _signal_completion
+                    _signal_completion(config.mailbox_team_path, _agent_id)
+                except Exception as _sig_exc:
+                    logger.debug("[in_process] %s: completion signal failed: %s", _agent_id, _sig_exc)
             logger.debug("[in_process] %s: sent idle_notification", _agent_id)
             # Push swarm_status WS event via on_status_change (set by backend_host at session start)
             if config.on_status_change is not None:
