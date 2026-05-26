@@ -1,0 +1,14 @@
+workflow: full
+phase: design
+build_mode: null
+isolation: null
+verify_mode: null
+design_doc: null
+plan: null
+verify_result: pending
+verification_report: null
+branch_status: pending
+verified_at: null
+archived: false
+handoff_context: openspec/changes/swarm-team-protocol-enhancements/.comet/handoff/design-context.json
+handoff_hash: b4c504f91c099ad4ab0fcf5bc03af0a66f175767162ff60777e178b88f2a1791

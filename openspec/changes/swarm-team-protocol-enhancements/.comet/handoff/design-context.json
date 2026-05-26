@@ -1,0 +1,17 @@
+{
+  "change": "swarm-team-protocol-enhancements",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b4c504f91c099ad4ab0fcf5bc03af0a66f175767162ff60777e178b88f2a1791",
+  "files": [
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/proposal.md", "sha256": "7a96cbe41caa8948cb9d58502510b4c18795398c045d6d1c5a570f4115317d7d" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/design.md", "sha256": "4a688d900cf332cb7db6e67b1059cfdf1b13eb2ddd34465a343074b3e9f5a456" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/tasks.md", "sha256": "cf272b29d07364e00d41d210f8c7c1a70e56601b7ec6df9a37266a042ff8b06a" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/specs/swarm-plan-approval/spec.md", "sha256": "606ffa075a6c398e8515e573a703b7c13e7230f6bdfdfbc56fd0fad861016cc2" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/specs/swarm-protocol-state/spec.md", "sha256": "3897d5a35c5e2abae11aaba5de5d5a6487cff1968df571386f62baa30f115170" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/specs/swarm-task-dependency/spec.md", "sha256": "0554867a09431f7195603f558e4d6a9e54691bcd6c9d44079eaccf6ae63ecb75" },
+    { "path": "openspec/changes/swarm-team-protocol-enhancements/specs/swarm-tool-naming/spec.md", "sha256": "1caf03e3ecf0af13d05428c56ada7a1f725a126fb42645cc24193d968a502602" }
+  ]
+}
