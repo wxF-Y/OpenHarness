@@ -237,7 +237,7 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
                 return _sanitize_snapshot_payload(json.loads(path.read_text(encoding="utf-8")))
             except Exception:
                 log.warning("Failed to load session file %s", path)
-                return None
+                continue
     return None
 
 
