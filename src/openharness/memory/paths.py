@@ -14,6 +14,9 @@ def get_project_memory_dir(cwd: str | Path) -> Path:
     digest = sha1(str(path).encode("utf-8")).hexdigest()[:12]
     memory_dir = get_data_dir() / "memory" / f"{path.name}-{digest}"
     memory_dir.mkdir(parents=True, exist_ok=True)
+    source_file = memory_dir / ".source_cwd"
+    if not source_file.exists():
+        source_file.write_text(str(path), encoding="utf-8")
     return memory_dir
 
 
