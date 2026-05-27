@@ -16,7 +16,7 @@ from fastapi import APIRouter, File, HTTPException, Path as FPath, UploadFile
 from pydantic import BaseModel, Field
 
 from hlagent_sdk import AgentSessionConfig
-from openharness.services.session_storage import delete_session_snapshot
+from openharness.services.session_storage import delete_session_snapshot, list_all_sessions
 from services.session_manager import session_mgr
 
 log = logging.getLogger(__name__)
@@ -81,16 +81,13 @@ class CreateSessionRequest(BaseModel):
 
 @router.get("")
 async def list_sessions() -> list[SessionSummary]:
-    """List active sessions from session_mgr (in-memory only).
+    """内存活跃 session 为主，磁盘历史为辅，合并去重后返回。"""
+    results: list[SessionSummary] = []
+    seen_internal_ids: set[str] = set()
 
-    NOTE: Only returns sessions active in current Gateway process.
-    Historical sessions from previous Gateway runs are not available
-    because HLAgent UUIDs and OpenHarness internal session IDs are
-    two separate systems — they cannot be safely cross-referenced.
-    """
-    results = []
-    for session_id in session_mgr.list_ids():
-        entry = session_mgr.get_entry(session_id)
+    # ① 内存活跃 session（主）
+    for gw_sid in session_mgr.list_ids():
+        entry = session_mgr.get_entry(gw_sid)
         if entry is None:
             continue
         state = entry.host.app_state if entry.host.is_ready else None
@@ -100,7 +97,6 @@ async def list_sessions() -> list[SessionSummary]:
                 if getattr(msg, "role", None) == "user":
                     content = getattr(msg, "content", "")
                     if isinstance(content, list):
-                        # Extract text from content blocks
                         text = " ".join(
                             b.get("text", "") if isinstance(b, dict) else getattr(b, "text", "")
                             for b in content
@@ -111,8 +107,11 @@ async def list_sessions() -> list[SessionSummary]:
                         text = str(content)
                     title = _extract_session_title(text)
                     break
+        internal_id = entry.host.get_session_id()
+        if internal_id:
+            seen_internal_ids.add(internal_id)
         results.append(SessionSummary(
-            session_id=session_id,
+            session_id=gw_sid,
             model=state.model if state else (entry.model or ""),
             cwd=state.cwd if state else (entry.cwd or ""),
             is_managed=_is_managed(entry.cwd),
@@ -122,8 +121,27 @@ async def list_sessions() -> list[SessionSummary]:
             expert_role=entry.expert_role,
             expert_role_label=entry.expert_role_label,
         ))
-    # Most recent sessions first
-    return list(reversed(results))
+
+    # ② 磁盘历史（辅）— 补入内存中没有的
+    disk_sessions = await asyncio.to_thread(list_all_sessions)
+    for snap in disk_sessions:
+        sid = snap.get("session_id", "")
+        if not sid or sid in seen_internal_ids:
+            continue
+        seen_internal_ids.add(sid)
+        summary = snap.get("summary", "")
+        results.append(SessionSummary(
+            session_id=sid,
+            model=snap.get("model", ""),
+            cwd=snap.get("cwd", ""),
+            is_managed=_is_managed(snap.get("cwd")),
+            ready=False,
+            created_at=snap.get("created_at", 0.0),
+            title=summary,
+        ))
+
+    results.sort(key=lambda s: s.created_at, reverse=True)
+    return results
 
 
 # HLAgent-specific system prompt — intentionally separate from OpenHarness _BASE_SYSTEM_PROMPT.
@@ -239,6 +257,9 @@ async def delete_session(session_id: _SESSION_ID) -> None:
         log.warning("Error stopping session %s: %s", session_id, exc)
 
     session_mgr.remove(session_id)
+
+    from routers.ws import _recovery_locks
+    _recovery_locks.pop(session_id, None)
 
     if internal_sid:
         try:
