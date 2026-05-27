@@ -11,7 +11,7 @@ router = APIRouter(tags=["skills"])
 
 @router.get("/api/skills")
 async def list_skills() -> list[dict[str, Any]]:
-    from openharness.skills.registry import load_skill_registry
+    from openharness.skills.loader import load_skill_registry
     registry = load_skill_registry()
     return [
         {
@@ -26,7 +26,7 @@ async def list_skills() -> list[dict[str, Any]]:
 
 @router.get("/api/skills/{name}")
 async def get_skill(name: str) -> dict[str, Any]:
-    from openharness.skills.registry import load_skill_registry
+    from openharness.skills.loader import load_skill_registry
     registry = load_skill_registry()
     for s in registry.list_skills():
         if s.name == name:

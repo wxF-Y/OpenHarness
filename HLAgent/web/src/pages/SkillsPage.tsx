@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import MDRenderer from '../components/MDRenderer'
 
+function stripFrontmatter(content: string): string {
+  if (!content.startsWith('---')) return content
+  const end = content.indexOf('\n---', 3)
+  if (end === -1) return content
+  return content.slice(end + 4).trimStart()
+}
+
 interface Skill {
   name: string
   description: string
@@ -52,7 +59,7 @@ export default function SkillsPage() {
         <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
           {!selected && <div style={{ color: '#6c7086', fontSize: '0.875rem', textAlign: 'center', marginTop: '3rem' }}>选择 Skill 查看内容</div>}
           {loading && <div style={{ color: '#6c7086' }}>加载中…</div>}
-          {!loading && content && <MDRenderer content={content} />}
+          {!loading && content && <MDRenderer content={stripFrontmatter(content)} />}
         </div>
       </div>
     </div>
