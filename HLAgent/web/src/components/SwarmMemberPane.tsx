@@ -97,13 +97,12 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
       return
     }
 
-    // Always pre-load transcript immediately (covers page refresh after agent finished)
-    loadFullTranscript(sessionId)
-
     const qs = `?run_id=${encodeURIComponent(runId)}`
     const url = `/api/swarm/agents/${encodeURIComponent(member.agent_id)}/stream${qs}`
     const es = new EventSource(url)
     esRef.current = es
+    // Reset all state so SSE stream starts fresh (pre-loaded static data would conflict)
+    setItems([])
     setIsStreaming(true)
     setAssistantBuffer('')
     setThinkingBuffer('')
@@ -183,7 +182,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     } else {
       setHasNew(true)
     }
-  }, [items, assistantBuffer, autoScroll])
+  }, [items, assistantBuffer, thinkingBuffer, autoScroll])
 
   const handleScroll = () => {
     const el = containerRef.current
@@ -193,7 +192,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     else setAutoScroll(false)
   }
 
-  const isEmpty = items.length === 0 && !assistantBuffer
+  const isEmpty = items.length === 0 && !assistantBuffer && !thinkingBuffer
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative', backgroundColor: '#1e1e2e' }}>
@@ -233,7 +232,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
             </div>
           </div>
         )}
-        {(items.length > 0 || assistantBuffer) && (
+        {(items.length > 0 || assistantBuffer || thinkingBuffer) && (
           <TranscriptViewer
             items={items}
             assistantBuffer={assistantBuffer}
