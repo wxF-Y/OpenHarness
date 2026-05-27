@@ -62,6 +62,10 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const [autoScroll, setAutoScroll] = useState(true)
   const esRef = useRef<EventSource | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Refs track latest buffer values synchronously so flush can read them without
+  // nested setState updaters (which cause batching races and visible duplicates).
+  const assistantBufferRef = useRef('')
+  const thinkingBufferRef = useRef('')
 
   const teammates = useSwarmStore((s) => s.teammates)
   const t = teammates.find((x) => x.name === member.name)
@@ -92,65 +96,58 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     if (!sessionId || !runId) {
       // No session or run — load static transcript if done
       if (sessionId && memberStatus !== 'active') {
-        loadFullTranscript(sessionId)
-      }
-      return
-    }
+        loadFullTranscript()
 
     const qs = `?run_id=${encodeURIComponent(runId)}`
     const url = `/api/swarm/agents/${encodeURIComponent(member.agent_id)}/stream${qs}`
     const es = new EventSource(url)
     esRef.current = es
-    // Reset all state so SSE stream starts fresh (pre-loaded static data would conflict)
+    // Reset all state so SSE stream starts fresh
+    assistantBufferRef.current = ''
+    thinkingBufferRef.current = ''
     setItems([])
     setIsStreaming(true)
     setAssistantBuffer('')
     setThinkingBuffer('')
 
+    // Flush both buffers atomically: reads from refs (always current), then clears
+    // both refs + state in one batch before adding items. Avoids nested setState
+    // updaters which cause batching races that render the same thinking twice.
+    const flushBuffers = () => {
+      const text = assistantBufferRef.current
+      const thinking = thinkingBufferRef.current
+      assistantBufferRef.current = ''
+      thinkingBufferRef.current = ''
+      setAssistantBuffer('')
+      setThinkingBuffer('')
+      if (text || thinking) {
+        setItems((it) => [...it, {
+          role: 'assistant' as const,
+          text,
+          ...(thinking ? { thinking } : {}),
+        }])
+      }
+    }
+
     es.onmessage = (e) => {
       try {
         const data: { type: string; text?: string; name?: string; output?: string; input?: Record<string, unknown> } = JSON.parse(e.data)
         if (data.type === 'delta' && data.text) {
-          setAssistantBuffer((prev) => prev + data.text)
+          assistantBufferRef.current += data.text
+          setAssistantBuffer(assistantBufferRef.current)
         } else if (data.type === 'thinking_delta' && data.text) {
-          setThinkingBuffer((prev) => prev + data.text)
+          thinkingBufferRef.current += data.text
+          setThinkingBuffer(thinkingBufferRef.current)
         } else if (data.type === 'tool_start') {
-          // Flush both text and thinking buffers before adding tool item
-          setAssistantBuffer((prevText) => {
-            setThinkingBuffer((prevThinking) => {
-              if (prevText || prevThinking) {
-                setItems((it) => [...it, {
-                  role: 'assistant',
-                  text: prevText,
-                  ...(prevThinking ? { thinking: prevThinking } : {}),
-                }])
-              }
-              return ''
-            })
-            return ''
-          })
+          flushBuffers()
           setItems((it) => [...it, { role: 'tool', text: '', tool_name: data.name ?? 'tool', tool_input: data.input ?? {} }])
         } else if (data.type === 'tool_end') {
           setItems((it) => [...it, { role: 'tool_result', text: (data.output ?? '').slice(0, 500) }])
         } else if (data.type === 'done') {
           setIsStreaming(false)
           es.close()
-          // Flush remaining text and thinking buffers
-          setAssistantBuffer((prevText) => {
-            setThinkingBuffer((prevThinking) => {
-              if (prevText || prevThinking) {
-                setItems((it) => [...it, {
-                  role: 'assistant',
-                  text: prevText,
-                  ...(prevThinking ? { thinking: prevThinking } : {}),
-                }])
-              }
-              return ''
-            })
-            return ''
-          })
-          // Load authoritative session transcript
-          loadFullTranscript(sessionId)
+          flushBuffers()
+          loadFullTranscript()
         } else if (data.type === 'error') {
           setIsStreaming(false)
           es.close()
@@ -162,7 +159,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
       setIsStreaming(false)
       es.close()
       // Fall back to transcript if SSE fails
-      loadFullTranscript(sessionId)
+      loadFullTranscript()
     }
 
     return () => {
