@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+log = logging.getLogger(__name__)
 
 from openharness.api.usage import UsageSnapshot
 from openharness.config.paths import get_sessions_dir
@@ -218,6 +221,54 @@ def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | Non
         if data.get("session_id") == session_id or session_id == "latest":
             return data
     return None
+
+
+def find_session_by_id(session_id: str) -> dict[str, Any] | None:
+    """全局扫描所有项目目录，按 session_id 查找 snapshot 文件。"""
+    sessions_dir = get_sessions_dir()
+    if not sessions_dir.exists():
+        return None
+    for project_dir in sessions_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        path = project_dir / f"session-{session_id}.json"
+        if path.exists():
+            try:
+                return _sanitize_snapshot_payload(json.loads(path.read_text(encoding="utf-8")))
+            except Exception:
+                log.warning("Failed to load session file %s", path)
+                return None
+    return None
+
+
+def list_all_sessions() -> list[dict[str, Any]]:
+    """扫描所有项目目录下的 session-*.json，返回轻量摘要列表，按 created_at 倒序。"""
+    sessions_dir = get_sessions_dir()
+    results: list[dict[str, Any]] = []
+    if not sessions_dir.exists():
+        return results
+    for project_dir in sessions_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        for path in project_dir.glob("session-*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                results.append({
+                    "session_id": data.get("session_id", ""),
+                    "cwd": data.get("cwd", ""),
+                    "model": data.get("model", ""),
+                    "summary": data.get("summary", ""),
+                    "message_count": data.get("message_count", 0),
+                    "created_at": data.get("created_at", path.stat().st_mtime),
+                    "permission_mode": data.get("permission_mode"),
+                    "api_format": data.get("api_format"),
+                    "active_profile": data.get("active_profile"),
+                })
+            except Exception:
+                log.warning("Skipping unreadable session file %s", path)
+                continue
+    results.sort(key=lambda x: x["created_at"], reverse=True)
+    return results
 
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{12}$")
