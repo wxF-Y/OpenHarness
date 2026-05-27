@@ -1,0 +1,13 @@
+workflow: hotfix
+phase: archive
+build_mode: direct
+isolation: branch
+verify_mode: light
+design_doc: null
+plan: null
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-05-27-fix-gateway-port-mismatch-verify.md
+branch_status: handled
+verified_at: 2026-05-27
+archived: true
+build_command: curl -sf http://localhost:5173/api/swarm/role-library/catalog | head -c 10 | grep -q '{'
