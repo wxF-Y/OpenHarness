@@ -100,7 +100,7 @@ function MessageRow({ item, sessionId }: { item: TranscriptItem; sessionId?: str
       <div style={{ marginBottom: '0.25rem' }}>
         <RoleLabel role={item.role} />
       </div>
-      <div style={{ paddingLeft: '0.5rem' }}>
+      <div style={{ paddingLeft: item.role === 'user' ? '0.5rem' : 0 }}>
         {item.role === 'assistant' && item.thinking && (
           <ThinkingBlock thinking={item.thinking} />
         )}
@@ -211,7 +211,7 @@ export default function TranscriptViewer({ items, assistantBuffer, thinkingBuffe
             <div style={{ marginBottom: '0.25rem' }}>
               <RoleLabel role="assistant" />
             </div>
-            <div style={{ paddingLeft: '0.5rem' }}>
+            <div style={{ paddingLeft: 0 }}>
               {thinkingBuffer && (
                 <ThinkingBlock thinking={thinkingBuffer} streaming />
               )}
