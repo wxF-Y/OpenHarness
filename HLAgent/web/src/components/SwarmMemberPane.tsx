@@ -57,6 +57,7 @@ function parseSessionToItems(snapshot: { messages?: Record<string, unknown>[] })
 export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const [items, setItems] = useState<TranscriptItem[]>([])
   const [assistantBuffer, setAssistantBuffer] = useState('')
+  const [thinkingBuffer, setThinkingBuffer] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamDone, setStreamDone] = useState(false)
   const [hasNew, setHasNew] = useState(false)
@@ -107,6 +108,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     esRef.current = es
     setIsStreaming(true)
     setAssistantBuffer('')
+    setThinkingBuffer('')
     setStreamDone(false)
 
     es.onmessage = (e) => {
@@ -114,12 +116,21 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
         const data: { type: string; text?: string; name?: string; output?: string; input?: Record<string, unknown> } = JSON.parse(e.data)
         if (data.type === 'delta' && data.text) {
           setAssistantBuffer((prev) => prev + data.text)
+        } else if (data.type === 'thinking_delta' && data.text) {
+          setThinkingBuffer((prev) => prev + data.text)
         } else if (data.type === 'tool_start') {
-          // Flush current buffer as assistant message, then add tool item
-          setAssistantBuffer((prev) => {
-            if (prev) {
-              setItems((it) => [...it, { role: 'assistant', text: prev }])
-            }
+          // Flush both text and thinking buffers before adding tool item
+          setAssistantBuffer((prevText) => {
+            setThinkingBuffer((prevThinking) => {
+              if (prevText || prevThinking) {
+                setItems((it) => [...it, {
+                  role: 'assistant',
+                  text: prevText,
+                  ...(prevThinking ? { thinking: prevThinking } : {}),
+                }])
+              }
+              return ''
+            })
             return ''
           })
           setItems((it) => [...it, { role: 'tool', text: '', tool_name: data.name ?? 'tool', tool_input: data.input ?? {} }])
@@ -129,9 +140,18 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
           setIsStreaming(false)
           setStreamDone(true)
           es.close()
-          // Flush remaining buffer
-          setAssistantBuffer((prev) => {
-            if (prev) setItems((it) => [...it, { role: 'assistant', text: prev }])
+          // Flush remaining text and thinking buffers
+          setAssistantBuffer((prevText) => {
+            setThinkingBuffer((prevThinking) => {
+              if (prevText || prevThinking) {
+                setItems((it) => [...it, {
+                  role: 'assistant',
+                  text: prevText,
+                  ...(prevThinking ? { thinking: prevThinking } : {}),
+                }])
+              }
+              return ''
+            })
             return ''
           })
           // Load authoritative session transcript
@@ -221,7 +241,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
           <TranscriptViewer
             items={items}
             assistantBuffer={assistantBuffer}
-            thinkingBuffer=""
+            thinkingBuffer={thinkingBuffer}
           />
         )}
       </div>
