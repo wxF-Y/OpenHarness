@@ -97,6 +97,9 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
       // No session or run — load static transcript if done
       if (sessionId && memberStatus !== 'active') {
         loadFullTranscript()
+      }
+      return
+    }
 
     const qs = `?run_id=${encodeURIComponent(runId)}`
     const url = `/api/swarm/agents/${encodeURIComponent(member.agent_id)}/stream${qs}`
