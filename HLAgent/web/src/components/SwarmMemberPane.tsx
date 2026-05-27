@@ -69,7 +69,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const memberStatus = t?.status ?? member.status
 
   // Load full transcript from session JSON
-  const loadFullTranscript = async (_sid: string) => {
+  const loadFullTranscript = async () => {
     if (!runId) return
     try {
       const qs = `?run_id=${encodeURIComponent(runId)}`
