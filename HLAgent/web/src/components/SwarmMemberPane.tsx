@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import MDRenderer from './MDRenderer'
 import TranscriptViewer from './TranscriptViewer'
 import type { TranscriptItem } from '../types/protocol'
 import type { TeamMember } from '../stores/swarmStore'
@@ -59,7 +58,6 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const [assistantBuffer, setAssistantBuffer] = useState('')
   const [thinkingBuffer, setThinkingBuffer] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
-  const [streamDone, setStreamDone] = useState(false)
   const [hasNew, setHasNew] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const esRef = useRef<EventSource | null>(null)
@@ -71,7 +69,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const memberStatus = t?.status ?? member.status
 
   // Load full transcript from session JSON
-  const loadFullTranscript = async (sid: string) => {
+  const loadFullTranscript = async (_sid: string) => {
     if (!runId) return
     try {
       const qs = `?run_id=${encodeURIComponent(runId)}`
@@ -109,7 +107,6 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     setIsStreaming(true)
     setAssistantBuffer('')
     setThinkingBuffer('')
-    setStreamDone(false)
 
     es.onmessage = (e) => {
       try {
@@ -138,7 +135,6 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
           setItems((it) => [...it, { role: 'tool_result', text: (data.output ?? '').slice(0, 500) }])
         } else if (data.type === 'done') {
           setIsStreaming(false)
-          setStreamDone(true)
           es.close()
           // Flush remaining text and thinking buffers
           setAssistantBuffer((prevText) => {
