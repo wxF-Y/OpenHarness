@@ -27,6 +27,9 @@ class SessionBackend(Protocol):
         usage: UsageSnapshot,
         session_id: str | None = None,
         tool_metadata: dict[str, object] | None = None,
+        permission_mode: str | None = None,
+        api_format: str | None = None,
+        active_profile: str | None = None,
     ) -> Path:
         """Persist a session snapshot and return its path."""
 
@@ -65,6 +68,9 @@ class OpenHarnessSessionBackend:
         usage: UsageSnapshot,
         session_id: str | None = None,
         tool_metadata: dict[str, object] | None = None,
+        permission_mode: str | None = None,
+        api_format: str | None = None,
+        active_profile: str | None = None,
     ) -> Path:
         return session_storage.save_session_snapshot(
             cwd=cwd,
@@ -74,6 +80,9 @@ class OpenHarnessSessionBackend:
             usage=usage,
             session_id=session_id,
             tool_metadata=tool_metadata,
+            permission_mode=permission_mode,
+            api_format=api_format,
+            active_profile=active_profile,
         )
 
     def load_latest(self, cwd: str | Path) -> dict | None:
