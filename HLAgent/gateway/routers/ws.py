@@ -27,6 +27,8 @@ router = APIRouter(tags=["ws"])
 # consumers; whichever wins the race gets tool_completed — the real
 # browser connection may end up with the tool stuck as pending forever.
 _active_event_tasks: dict[str, asyncio.Task] = {}
+# asyncio is single-threaded: the dict write between `not in` check and assignment
+# cannot be preempted by another coroutine (no await between them), so this is safe.
 _recovery_locks: dict[str, asyncio.Lock] = {}
 
 
@@ -56,6 +58,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
                         host=recovered_host,
                         cwd=snap.get("cwd"),
                         model=snap.get("model"),
+                        expert_role=snap.get("expert_role"),
+                        expert_role_label=snap.get("expert_role_label"),
                     )
                     host = recovered_host
                 except Exception as exc:
