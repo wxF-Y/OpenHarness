@@ -431,7 +431,7 @@ async def _build_member_query_context(config: "TeammateSpawnConfig") -> Any:
     from openharness.config.settings import load_settings
     from openharness.prompts.environment import get_environment_info
     from openharness.prompts.system_prompt import _format_environment_section
-    from openharness.tools import create_default_tool_registry
+    from openharness.tools import create_member_tool_registry
     from openharness.engine.query import QueryContext
     from openharness.permissions.checker import PermissionChecker
     from openharness.ui.runtime import _resolve_api_client_from_settings
@@ -450,7 +450,7 @@ async def _build_member_query_context(config: "TeammateSpawnConfig") -> Any:
     env_section = _format_environment_section(env_info)
     full_sp = f"{member_sp}\n\n{env_section}" if member_sp else env_section
 
-    tool_registry = create_default_tool_registry()
+    tool_registry = create_member_tool_registry()
 
     return QueryContext(
         api_client=api_client,
