@@ -118,10 +118,47 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
     return registry
 
 
+LEADER_EXCLUSIVE_TOOLS: frozenset[str] = frozenset({
+    "team_create_run",
+    "team_spawn_member",
+    "team_list_members",
+    "team_wait",
+    "team_read_mailbox",
+    "team_send_message",
+    "team_shutdown_member",
+    "team_request_plan",
+    "team_review_plan",
+    "team_request_shutdown",
+    "team_create",
+    "team_delete",
+})
+"""Leader-exclusive team coordination tools excluded from member tool registries.
+
+When adding new team_* coordination tools, register them here to ensure
+member sessions never receive access to leader-only capabilities.
+"""
+
+
+def create_member_tool_registry(mcp_manager=None) -> ToolRegistry:
+    """Return a tool registry for member sessions.
+
+    Contains all default tools minus LEADER_EXCLUSIVE_TOOLS.
+    MCP tools (passed via mcp_manager) are treated as base tools and included.
+    Signature mirrors create_default_tool_registry for future compatibility.
+    """
+    registry = ToolRegistry()
+    for tool in create_default_tool_registry(mcp_manager).list_tools():
+        if tool.name not in LEADER_EXCLUSIVE_TOOLS:
+            registry.register(tool)
+    return registry
+
+
 __all__ = [
     "BaseTool",
+    "LEADER_EXCLUSIVE_TOOLS",
     "ToolExecutionContext",
     "ToolRegistry",
     "ToolResult",
     "create_default_tool_registry",
+    "create_member_tool_registry",
 ]
