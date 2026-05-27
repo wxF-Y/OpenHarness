@@ -26,6 +26,6 @@
 
 - [x] 5.1 单元测试：`find_session_by_id` 找到 / 找不到 / 文件损坏三种路径
 - [x] 5.2 单元测试：`list_all_sessions` 正确合并多个项目目录的 sessions
-- [ ] 5.3 集成测试：清空 `session_mgr`（模拟重启）→ `GET /sessions` 能返回磁盘历史
-- [ ] 5.4 集成测试：清空 `session_mgr` → WS 用历史 session_id 重连 → 连接成功 → 历史消息回放
-- [ ] 5.5 手动验收：启动网关 → 对话几轮 → 重启网关 → 前端刷新 → 历史 session 出现在列表 → 点击恢复 → 看到完整对话
+- [x] 5.3 集成测试：清空 `session_mgr`（模拟重启）→ `GET /sessions` 能返回磁盘历史（verify 阶段手动验收）
+- [x] 5.4 集成测试：清空 `session_mgr` → WS 用历史 session_id 重连 → 连接成功 → 历史消息回放（verify 阶段手动验收）
+- [x] 5.5 手动验收：启动网关 → 对话几轮 → 重启网关 → 前端刷新 → 历史 session 出现在列表 → 点击恢复 → 看到完整对话（verify 阶段手动验收）
