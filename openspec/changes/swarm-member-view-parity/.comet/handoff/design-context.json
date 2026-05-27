@@ -1,0 +1,15 @@
+{
+  "change": "swarm-member-view-parity",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "f47d71a5158347e8620ae7a89c06d6d9b2820df270ab6f4314274169467547dc",
+  "files": [
+    { "path": "openspec/changes/swarm-member-view-parity/proposal.md", "sha256": "b72a4e9459d2c4f44337bae90a015ac88b906b471752fc6950c25fd35cfa6d12" },
+    { "path": "openspec/changes/swarm-member-view-parity/design.md", "sha256": "7769512bc0222361d19e35175278ca6532a20721f41228c815eb15b7ee6cf3e8" },
+    { "path": "openspec/changes/swarm-member-view-parity/tasks.md", "sha256": "407c20cf93a48622fa98d2c9224b914427a5379998bb55e30f033a31770683c7" },
+    { "path": "openspec/changes/swarm-member-view-parity/specs/hlagent-web-ui/spec.md", "sha256": "191bc0f95db7adcf1d5afb739af5c6d7486fbb9b69604a7af749cd86558f76e2" },
+    { "path": "openspec/changes/swarm-member-view-parity/specs/swarm-member-sse-thinking/spec.md", "sha256": "112095b5fc88c7d7f53f29eaf732cb399d460c62c0f618a0869fc77e31b65f14" }
+  ]
+}

@@ -1,0 +1,14 @@
+workflow: full
+phase: build
+build_mode: executing-plans
+isolation: branch
+verify_mode: null
+design_doc: docs/superpowers/specs/2026-05-27-swarm-member-view-parity-design.md
+plan: docs/superpowers/plans/2026-05-27-swarm-member-view-parity.md
+verify_result: pending
+verification_report: null
+branch_status: pending
+verified_at: null
+archived: false
+handoff_context: openspec/changes/swarm-member-view-parity/.comet/handoff/design-context.json
+handoff_hash: f47d71a5158347e8620ae7a89c06d6d9b2820df270ab6f4314274169467547dc
