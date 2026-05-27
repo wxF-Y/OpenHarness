@@ -1,3 +1,7 @@
+---
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
+---
 # Swarm Member View Parity Implementation Plan
 
 ---

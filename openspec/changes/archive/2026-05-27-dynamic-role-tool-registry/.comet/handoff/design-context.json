@@ -1,0 +1,14 @@
+{
+  "change": "dynamic-role-tool-registry",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "16ca05a2fb7135dc69df61e0597843f479dca492576bb76d24ad77e4d3333e69",
+  "files": [
+    { "path": "openspec/changes/dynamic-role-tool-registry/proposal.md", "sha256": "445804dccdf9931f13e2d80f25a989a27814a56f5923b2f8a334306d6c2172e9" },
+    { "path": "openspec/changes/dynamic-role-tool-registry/design.md", "sha256": "6ae931dc37dcb1dec768adac211deee3253ad5a374e1474a9174d0bb70ecdd78" },
+    { "path": "openspec/changes/dynamic-role-tool-registry/tasks.md", "sha256": "a57a0890b8b4afed7446554945cd1b00622cb4702832f3fad568f15bc3a12708" },
+    { "path": "openspec/changes/dynamic-role-tool-registry/specs/role-scoped-tool-registry/spec.md", "sha256": "db919c153edc29b931f9d61b20f696defc7bd3bac9ee48285d58138b82f0d3ba" }
+  ]
+}

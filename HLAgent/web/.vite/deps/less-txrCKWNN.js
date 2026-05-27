@@ -1,0 +1,44 @@
+import { r as __exportAll } from "./react-B35R_oEX.js";
+import { t as css } from "./css-0vhDf0z5.js";
+//#region node_modules/refractor/lang/less.js
+/**
+* @import {Refractor} from '../lib/core.js'
+*/
+var less_exports = /* @__PURE__ */ __exportAll({ default: () => less });
+less.displayName = "less";
+less.aliases = [];
+/** @param {Refractor} Prism */
+function less(Prism) {
+	Prism.register(css);
+	Prism.languages.less = Prism.languages.extend("css", {
+		comment: [/\/\*[\s\S]*?\*\//, {
+			pattern: /(^|[^\\])\/\/.*/,
+			lookbehind: true
+		}],
+		atrule: {
+			pattern: /@[\w-](?:\((?:[^(){}]|\([^(){}]*\))*\)|[^(){};\s]|\s+(?!\s))*?(?=\s*\{)/,
+			inside: { punctuation: /[:()]/ }
+		},
+		selector: {
+			pattern: /(?:@\{[\w-]+\}|[^{};\s@])(?:@\{[\w-]+\}|\((?:[^(){}]|\([^(){}]*\))*\)|[^(){};@\s]|\s+(?!\s))*?(?=\s*\{)/,
+			inside: { variable: /@+[\w-]+/ }
+		},
+		property: /(?:@\{[\w-]+\}|[\w-])+(?:\+_?)?(?=\s*:)/,
+		operator: /[+\-*\/]/
+	});
+	Prism.languages.insertBefore("less", "property", {
+		variable: [{
+			pattern: /@[\w-]+\s*:/,
+			inside: { punctuation: /:/ }
+		}, /@@?[\w-]+/],
+		"mixin-usage": {
+			pattern: /([{;]\s*)[.#](?!\d)[\w-].*?(?=[(;])/,
+			lookbehind: true,
+			alias: "function"
+		}
+	});
+}
+//#endregion
+export { less_exports as n, less as t };
+
+//# sourceMappingURL=less-txrCKWNN.js.map

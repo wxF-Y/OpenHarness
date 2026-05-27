@@ -2,12 +2,16 @@
 comet_change: swarm-member-view-parity
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 # Member View Parity Design
 
 Member SSE 流新增 `thinking_delta` 事件 + `SwarmMemberPane` thinkingBuffer，使 member 右侧面板渲染能力与 leader 左侧完全对齐。
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 1. 问题描述
@@ -20,6 +24,8 @@ ChatPage 分栏视图：
 
 后端 `in_process.py` 的 `_run_query_loop` 处理了 `AssistantThinkingDelta` 引擎事件但**未将其推入 `stream_q`**，导致前端 SSE 流无法获取 thinking 内容。
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 2. 事件流对比
@@ -34,6 +40,8 @@ tool_completed                   tool_end ✓               tool_end ✓
 assistant_complete               done ✓                   done ✓
 ```
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 3. 后端变更（in_process.py）
@@ -56,6 +64,8 @@ elif isinstance(event, AssistantThinkingDelta) and event.thinking:
 
 **注意**：`AssistantThinkingDelta` 的字段名是 `.thinking`（非 `.text`），但 SSE 事件统一用 `"text"` key 以保持接口一致性。
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 4. 前端变更（SwarmMemberPane.tsx）
@@ -143,6 +153,8 @@ const [thinkingBuffer, setThinkingBuffer] = useState('')
 />
 ```
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 5. parseSessionToItems 补全（SwarmMemberPane.tsx）
@@ -182,6 +194,8 @@ function parseSessionToItems(snapshot): TranscriptItem[] {
 }
 ```
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 6. 多 member 状态隔离（确认）
@@ -197,6 +211,8 @@ function parseSessionToItems(snapshot): TranscriptItem[] {
 
 新增 `thinkingBuffer` 是 per-instance `useState`，自动继承上述隔离保证。
 
+archived-with: 2026-05-27-swarm-member-view-parity
+status: final
 ---
 
 ## 7. 边界条件与风险

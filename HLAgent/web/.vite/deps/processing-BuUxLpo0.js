@@ -1,0 +1,29 @@
+import { r as __exportAll } from "./react-B35R_oEX.js";
+import { t as clike } from "./clike-CwhNchEx.js";
+//#region node_modules/refractor/lang/processing.js
+/**
+* @import {Refractor} from '../lib/core.js'
+*/
+var processing_exports = /* @__PURE__ */ __exportAll({ default: () => processing });
+processing.displayName = "processing";
+processing.aliases = [];
+/** @param {Refractor} Prism */
+function processing(Prism) {
+	Prism.register(clike);
+	Prism.languages.processing = Prism.languages.extend("clike", {
+		keyword: /\b(?:break|case|catch|class|continue|default|else|extends|final|for|if|implements|import|new|null|private|public|return|static|super|switch|this|try|void|while)\b/,
+		function: /\b\w+(?=\s*\()/,
+		operator: /<[<=]?|>[>=]?|&&?|\|\|?|[%?]|[!=+\-*\/]=?/
+	});
+	Prism.languages.insertBefore("processing", "number", {
+		constant: /\b(?!XML\b)[A-Z][A-Z\d_]+\b/,
+		type: {
+			pattern: /\b(?:boolean|byte|char|color|double|float|int|[A-Z]\w*)\b/,
+			alias: "class-name"
+		}
+	});
+}
+//#endregion
+export { processing_exports as n, processing as t };
+
+//# sourceMappingURL=processing-BuUxLpo0.js.map

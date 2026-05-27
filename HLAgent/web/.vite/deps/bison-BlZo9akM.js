@@ -1,0 +1,47 @@
+import { r as __exportAll } from "./react-B35R_oEX.js";
+import { t as c } from "./c-B0CiXVRE.js";
+//#region node_modules/refractor/lang/bison.js
+/**
+* @import {Refractor} from '../lib/core.js'
+*/
+var bison_exports = /* @__PURE__ */ __exportAll({ default: () => bison });
+bison.displayName = "bison";
+bison.aliases = [];
+/** @param {Refractor} Prism */
+function bison(Prism) {
+	Prism.register(c);
+	Prism.languages.bison = Prism.languages.extend("c", {});
+	Prism.languages.insertBefore("bison", "comment", { bison: {
+		pattern: /^(?:[^%]|%(?!%))*%%[\s\S]*?%%/,
+		inside: {
+			c: {
+				pattern: /%\{[\s\S]*?%\}|\{(?:\{[^}]*\}|[^{}])*\}/,
+				inside: {
+					delimiter: {
+						pattern: /^%?\{|%?\}$/,
+						alias: "punctuation"
+					},
+					"bison-variable": {
+						pattern: /[$@](?:<[^\s>]+>)?[\w$]+/,
+						alias: "variable",
+						inside: { punctuation: /<|>/ }
+					},
+					rest: Prism.languages.c
+				}
+			},
+			comment: Prism.languages.c.comment,
+			string: Prism.languages.c.string,
+			property: /\S+(?=:)/,
+			keyword: /%\w+/,
+			number: {
+				pattern: /(^|[^@])\b(?:0x[\da-f]+|\d+)/i,
+				lookbehind: true
+			},
+			punctuation: /%[%?]|[|:;\[\]<>]/
+		}
+	} });
+}
+//#endregion
+export { bison_exports as n, bison as t };
+
+//# sourceMappingURL=bison-BlZo9akM.js.map
