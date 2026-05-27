@@ -144,6 +144,12 @@ restart_scheduler() {
 case "$TARGET" in
   gateway)   restart_gateway ;;
   web)       restart_web ;;
+  stop)
+    echo "[stop] Stopping all HLAgent services..."
+    kill_port $GATEWAY_PORT
+    kill_port $WEB_PORT
+    echo "✅ All services stopped."
+    ;;
   all)
     restart_gateway   # cron scheduler starts automatically inside gateway
     restart_web
@@ -153,7 +159,7 @@ case "$TARGET" in
     echo "   Web       → http://localhost:${WEB_PORT}"
     ;;
   *)
-    echo "Usage: bash restart.sh [gateway|web|all]"
+    echo "Usage: bash restart.sh [gateway|web|stop|all]"
     exit 1
     ;;
 esac
