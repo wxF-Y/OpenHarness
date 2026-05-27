@@ -268,6 +268,12 @@ async def _run_query_loop(
                     with contextlib.suppress(asyncio.QueueFull):
                         stream_q.put_nowait({"type": "delta", "text": event.text})
 
+            # Forward thinking deltas to SSE stream (mirrors AssistantTextDelta handling)
+            elif isinstance(event, AssistantThinkingDelta) and event.thinking:
+                if stream_q is not None:
+                    with contextlib.suppress(asyncio.QueueFull):
+                        stream_q.put_nowait({"type": "thinking_delta", "text": event.thinking})
+
             # When turn completes, extract full text from the message
             # (covers models that don't emit AssistantTextDelta, only tool calls)
             elif isinstance(event, AssistantTurnComplete):
