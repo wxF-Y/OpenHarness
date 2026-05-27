@@ -118,10 +118,17 @@ class TeamSpawnMemberTool(BaseTool):
 
         # Build system prompt for this member based on their role
         member_system = (
-            f"You are '{arguments.member}', a member of swarm team '{arguments.team}'.\n"
+            f"You are '{arguments.member}', a member of swarm team '{arguments.team}'."
+            + (f" run_id: {arguments.run_id}" if arguments.run_id else "")
+            + "\n"
             + (f"Your role: {role_prompt}\n\n" if role_prompt else "")
-            + "Complete the assigned task and report completion. "
-            "You may receive follow-up instructions via your inbox. "
+            + "IMPORTANT — Do NOT call team coordination tools: "
+            "team_wait, team_read_mailbox, team_create_run, team_spawn_member, "
+            "team_list_members, team_request_plan, team_review_plan, team_request_shutdown, team_shutdown_member. "
+            "Those tools are for the Leader only. "
+            "The system automatically notifies the Leader when you finish — you do not need to do this manually.\n"
+            "Focus only on your assigned task. "
+            "You may receive follow-up instructions via your inbox during the task. "
             "When your work is finished, summarize your output clearly."
         )
 
