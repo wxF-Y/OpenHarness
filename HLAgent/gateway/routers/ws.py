@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from openharness.ui.protocol import FrontendRequest, BackendEvent
@@ -13,6 +14,9 @@ from services.session_manager import session_mgr
 from hlagent_sdk import AgentSessionConfig, create_host
 from openharness.services.session_storage import find_session_by_id
 from services.session_manager import SessionEntry
+
+# session_id 格式：32-char gateway UUID 或 12-char OpenHarness 内部 ID
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{12,32}$")
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
@@ -34,6 +38,9 @@ _recovery_locks: dict[str, asyncio.Lock] = {}
 
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        await websocket.close(code=4004, reason="Invalid session ID")
+        return
     host = session_mgr.get(session_id)
     if host is None:
         if session_id not in _recovery_locks:
