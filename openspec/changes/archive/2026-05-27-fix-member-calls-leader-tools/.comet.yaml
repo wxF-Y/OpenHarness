@@ -1,0 +1,13 @@
+workflow: hotfix
+phase: archive
+build_mode: direct
+isolation: branch
+verify_mode: light
+design_doc: null
+plan: null
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-05-27-fix-member-calls-leader-tools-verify.md
+branch_status: handled
+verified_at: 2026-05-27
+archived: true
+build_command: python -c "from openharness.tools.team_spawn_member_tool import TeamSpawnMemberTool; import inspect; s=inspect.getsource(TeamSpawnMemberTool.execute); assert 'Do NOT call team coordination tools' in s"
