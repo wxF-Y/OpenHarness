@@ -409,5 +409,7 @@ def create_host(
         active_profile=config.active_profile or snap.get("active_profile"),
         restore_messages=snap.get("messages") or None,
         restore_tool_metadata=snap.get("tool_metadata") or None,
+        expert_role=config.expert_role or snap.get("expert_role"),
+        expert_role_label=config.expert_role_label or snap.get("expert_role_label"),
     )
     return WebBackendHost(host_config)

@@ -138,6 +138,8 @@ async def list_sessions() -> list[SessionSummary]:
             ready=False,
             created_at=snap.get("created_at", 0.0),
             title=summary,
+            expert_role=snap.get("expert_role"),
+            expert_role_label=snap.get("expert_role_label"),
         ))
 
     results.sort(key=lambda s: s.created_at, reverse=True)
@@ -215,6 +217,8 @@ async def create_session(req: CreateSessionRequest) -> SessionSummary:
         api_key=req.api_key,
         api_format=req.api_format,
         active_profile=req.active_profile,
+        expert_role=req.expert_role,
+        expert_role_label=req.expert_role_label,
     )
     session_mgr.create_with_id(session_id, config,
                                expert_role=req.expert_role,

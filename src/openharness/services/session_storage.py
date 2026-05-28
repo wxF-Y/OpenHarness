@@ -76,6 +76,8 @@ def save_session_snapshot(
     permission_mode: str | None = None,
     api_format: str | None = None,
     active_profile: str | None = None,
+    expert_role: str | None = None,
+    expert_role_label: str | None = None,
 ) -> Path:
     """Persist a session snapshot. Saves both by ID and as latest."""
     session_dir = get_project_session_dir(cwd)
@@ -103,6 +105,8 @@ def save_session_snapshot(
         "permission_mode": permission_mode,
         "api_format": api_format,
         "active_profile": active_profile,
+        "expert_role": expert_role,
+        "expert_role_label": expert_role_label,
     }
     # Serialize — clean any surrogate characters that break utf-8 encoding
     try:
