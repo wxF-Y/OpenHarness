@@ -181,36 +181,34 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
     monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
-    member_uuid = "abcdef1234567890abcdef1234567890"
-
-    # leader session 目录 — session file 含 swarm_member_session_ids
+    # leader session 目录
     leader_dir = tmp_path / "myproject-aaa111"
     leader_dir.mkdir()
-    leader_content = (
+    (leader_dir / "session-aaa000000001.json").write_text(
         '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
-        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0, '
-        '"tool_metadata": {"swarm_member_session_ids": ["' + member_uuid + '"]}}'
+        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0}',
+        encoding="utf-8",
     )
-    (leader_dir / "session-aaa000000001.json").write_text(leader_content, encoding="utf-8")
-
-    # member session 在同一目录下（session_id = 32-char UUID）
-    member_content = (
-        '{"session_id": "' + member_uuid + '", "cwd": "/tmp/proj", "model": "claude", '
-        '"messages": [], "summary": "member task", "message_count": 0, "created_at": 1000.0}'
+    # member session 在同一目录，含 parent_session_id 标记
+    (leader_dir / "session-member123abc.json").write_text(
+        '{"session_id": "member123abc", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "member task", "message_count": 0, "created_at": 1000.0, '
+        '"parent_session_id": "aaa000000001"}',
+        encoding="utf-8",
     )
-    (leader_dir / f"session-{member_uuid}.json").write_text(member_content, encoding="utf-8")
 
     results = session_storage.list_all_sessions()
     sids = [r["session_id"] for r in results]
     assert "aaa000000001" in sids, "leader session 应该在列表中"
-    assert member_uuid not in sids, "member session 不应该在列表中"
+    assert "member123abc" not in sids, "含 parent_session_id 的 member session 不应该在列表中"
 
 
 def test_get_member_session_prefixes_no_data(tmp_path, monkeypatch):
+    """list_all_sessions 在空目录上返回空列表（不依赖 swarm_member_session_ids 机制）。"""
     from openharness.services import session_storage
 
     monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
     monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
-    result = session_storage._get_member_session_ids()
-    assert result == set()
+    results = session_storage.list_all_sessions()
+    assert results == []

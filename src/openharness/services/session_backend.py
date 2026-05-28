@@ -32,6 +32,7 @@ class SessionBackend(Protocol):
         active_profile: str | None = None,
         expert_role: str | None = None,
         expert_role_label: str | None = None,
+        parent_session_id: str | None = None,
     ) -> Path:
         """Persist a session snapshot and return its path."""
 
@@ -75,6 +76,7 @@ class OpenHarnessSessionBackend:
         active_profile: str | None = None,
         expert_role: str | None = None,
         expert_role_label: str | None = None,
+        parent_session_id: str | None = None,
     ) -> Path:
         return session_storage.save_session_snapshot(
             cwd=cwd,
@@ -89,6 +91,7 @@ class OpenHarnessSessionBackend:
             active_profile=active_profile,
             expert_role=expert_role,
             expert_role_label=expert_role_label,
+            parent_session_id=parent_session_id,
         )
 
     def load_latest(self, cwd: str | Path) -> dict | None:
