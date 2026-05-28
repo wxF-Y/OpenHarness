@@ -34,6 +34,8 @@ class AgentSessionConfig:
     api_key: str | None = None
     api_format: str | None = None
     active_profile: str | None = None
+    expert_role: str | None = None
+    expert_role_label: str | None = None
 
 
 class WebBackendHost(ReactBackendHost):
