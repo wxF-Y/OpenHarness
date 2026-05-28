@@ -145,7 +145,7 @@ def test_list_all_sessions(tmp_path, monkeypatch):
             f'{{"session_id": "{sid}", "cwd": "/tmp/p{i}", "model": "claude", '
             f'"messages": [], "summary": "test", "message_count": 0, "created_at": {ts}}}'
         )
-        (d / "latest.json").write_text(content, encoding="utf-8")
+        (d / f"session-{sid}.json").write_text(content, encoding="utf-8")
 
     results = session_storage.list_all_sessions()
     assert len(results) == 2
@@ -160,7 +160,7 @@ def test_list_all_sessions_skips_corrupt(tmp_path, monkeypatch):
 
     good_dir = tmp_path / "proj-good"
     good_dir.mkdir()
-    (good_dir / "latest.json").write_text(
+    (good_dir / "session-aaa000000001.json").write_text(
         '{"session_id": "aaa000000001", "cwd": "/tmp/good", "model": "claude", '
         '"messages": [], "summary": "ok", "message_count": 0, "created_at": 1000.0}',
         encoding="utf-8",
@@ -168,7 +168,7 @@ def test_list_all_sessions_skips_corrupt(tmp_path, monkeypatch):
 
     bad_dir = tmp_path / "proj-bad"
     bad_dir.mkdir()
-    (bad_dir / "latest.json").write_text("not-json", encoding="utf-8")
+    (bad_dir / "session-bbb000000002.json").write_text("not-json", encoding="utf-8")
 
     results = session_storage.list_all_sessions()
     assert len(results) == 1
@@ -182,30 +182,28 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
     member_uuid = "abcdef1234567890abcdef1234567890"
-    member_cwd = f"/tmp/workspaces/{member_uuid}"
 
-    # team.json: session_id=None 但 cwd 已知（member 启动前的常见情况）
-    run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
-    run_dir.mkdir(parents=True)
-    (run_dir / "team.json").write_text(
-        '{"lead_session_id": "aaa000000001", "members": {"agent@team": {"session_id": null, "cwd": "' + member_cwd + '"}}}',
-        encoding="utf-8",
-    )
-
-    # leader session 目录（普通名称）— 使用 latest.json
+    # leader session 目录（普通名称）— latest.json 里含 swarm_member_session_ids
     leader_dir = tmp_path / "myproject-aaa111"
     leader_dir.mkdir()
+    (leader_dir / "session-aaa000000001.json").write_text(
+        '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0, '
+        '"tool_metadata": {"swarm_member_session_ids": ["' + member_uuid + '"]}}',
+        encoding="utf-8",
+    )
     (leader_dir / "latest.json").write_text(
         '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
-        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0}',
+        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0, '
+        '"tool_metadata": {"swarm_member_session_ids": ["' + member_uuid + '"]}}',
         encoding="utf-8",
     )
 
-    # member session 目录（以 member UUID 开头）— 使用 latest.json
+    # member session 目录（以 member UUID 开头）
     member_dir = tmp_path / f"{member_uuid}-bbb222333444"
     member_dir.mkdir()
-    (member_dir / "latest.json").write_text(
-        '{"session_id": "bbb000000002", "cwd": "' + member_cwd + '", "model": "claude", '
+    (member_dir / "session-bbb000000002.json").write_text(
+        '{"session_id": "bbb000000002", "cwd": "/tmp/workspace", "model": "claude", '
         '"messages": [], "summary": "member", "message_count": 0, "created_at": 1000.0}',
         encoding="utf-8",
     )
@@ -213,19 +211,15 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     results = session_storage.list_all_sessions()
     sids = [r["session_id"] for r in results]
     assert "aaa000000001" in sids, "leader session 应该在列表中"
-    assert "bbb000000002" not in sids, "member session 不应该在列表中（通过 cwd 过滤）"
+    assert "bbb000000002" not in sids, "member session 不应该在列表中"
 
 
-def test_get_member_session_prefixes_corrupt_team_json(tmp_path, monkeypatch):
+def test_get_member_session_prefixes_no_data(tmp_path, monkeypatch):
     from openharness.services import session_storage
 
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
     monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
-    # 写一个损坏的 team.json
-    run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
-    run_dir.mkdir(parents=True)
-    (run_dir / "team.json").write_text("not-json", encoding="utf-8")
-
-    # 损坏文件应跳过，返回空集合
+    # sessions 目录为空时返回空集合
     result = session_storage._get_member_session_prefixes()
     assert result == set()

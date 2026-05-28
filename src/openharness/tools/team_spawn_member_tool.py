@@ -198,6 +198,14 @@ class TeamSpawnMemberTool(BaseTool):
                         )
                     run_tf.save(run_team_file)
 
+                    # 记录 member session UUID 到 leader 的 tool_metadata，
+                    # 由 swarm_member_session_ids 持久化到 snapshot，用于 session 列表过滤
+                    member_uuid = result.session_id or session_id
+                    if member_uuid and context.metadata is not None:
+                        member_ids = context.metadata.setdefault("swarm_member_session_ids", [])
+                        if member_uuid not in member_ids:
+                            member_ids.append(member_uuid)
+
                     # Immediately emit swarm_status so frontend opens SSE BEFORE member finishes
                     # This is the key to true real-time streaming (not batched after completion)
                     if on_status_change is not None:

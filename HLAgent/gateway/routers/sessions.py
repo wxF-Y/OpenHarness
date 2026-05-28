@@ -16,7 +16,7 @@ from fastapi import APIRouter, File, HTTPException, Path as FPath, UploadFile
 from pydantic import BaseModel, Field
 
 from hlagent_sdk import AgentSessionConfig
-from openharness.services.session_storage import delete_session_snapshot, list_all_sessions
+from openharness.services.session_storage import delete_session_snapshot, list_all_sessions, load_session_snapshot
 from services.session_manager import session_mgr
 
 log = logging.getLogger(__name__)
@@ -108,6 +108,11 @@ async def list_sessions() -> list[SessionSummary]:
                     title = _extract_session_title(text)
                     break
         internal_id = entry.host.get_session_id()
+        if internal_id is None and entry.cwd:
+            # host 未就绪时（session 刚创建、尚未对话），从磁盘 latest.json 取内部 session_id
+            snap = load_session_snapshot(entry.cwd)
+            if snap:
+                internal_id = snap.get("session_id")
         if internal_id:
             seen_internal_ids.add(internal_id)
         results.append(SessionSummary(
