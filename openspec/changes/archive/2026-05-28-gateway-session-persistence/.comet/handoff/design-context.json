@@ -1,0 +1,14 @@
+{
+  "change": "gateway-session-persistence",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "895acc6d9a2e74b2d3ea4d9d09259c0bad223434beb697855e40fc18295f5deb",
+  "files": [
+    { "path": "openspec/changes/gateway-session-persistence/proposal.md", "sha256": "17299bf67a3f64506b8fe49fe4d9a9088d93b95688ff77ddeda6238032194837" },
+    { "path": "openspec/changes/gateway-session-persistence/design.md", "sha256": "93d2e38dd076fc3d12d08269b00ed61e5bd7008244d96e52ee0281a2a528cbc3" },
+    { "path": "openspec/changes/gateway-session-persistence/tasks.md", "sha256": "4e63aa240f694f5b86da65330778cf76950b9737f06824fdb59d6e281d3d6467" },
+    { "path": "openspec/changes/gateway-session-persistence/specs/session-persistence-recovery/spec.md", "sha256": "954b486f3510ee6452b4236814a90373e4a6871244fec56f4a447ca4506da2e2" }
+  ]
+}

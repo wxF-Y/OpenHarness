@@ -1,0 +1,15 @@
+{
+  "change": "session-list-display-fixes",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "35d14e424e113ede84b8009daf669029da594313e8a2bc2312ffcd3c0bc31bbd",
+  "files": [
+    { "path": "openspec/changes/session-list-display-fixes/proposal.md", "sha256": "99dede5b55715894e38c461cf5ab4b4b9aeba31b6f6d91b8bccfdb0bbf26594e" },
+    { "path": "openspec/changes/session-list-display-fixes/design.md", "sha256": "f102ac6d256dac7b7dbcd0ba3bcd74e48b2b775472e01555b7c1ee91a604e9ba" },
+    { "path": "openspec/changes/session-list-display-fixes/tasks.md", "sha256": "039c6fc4bee525a988447e8c07681f5944322576004532a4dc916db5b05bf377" },
+    { "path": "openspec/changes/session-list-display-fixes/specs/session-expert-role-persistence/spec.md", "sha256": "cd3c71025a75cee2f701c26d6b480d5203f61a16eee9e651c50c4cb5af8059c1" },
+    { "path": "openspec/changes/session-list-display-fixes/specs/session-list-member-filter/spec.md", "sha256": "2b9740551263a46518960e40d5f90fdf8a3c9db8ef4927f9b60bc2373972522a" }
+  ]
+}
