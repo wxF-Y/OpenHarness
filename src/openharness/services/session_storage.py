@@ -290,8 +290,11 @@ def list_all_sessions() -> list[dict[str, Any]]:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 sid = data.get("session_id", "")
-                if sid and sid in member_session_ids:
-                    continue  # 跳过 member session
+                # 正常 session 的 session_id 是 12-char hex（uuid4().hex[:12]）
+                # in-process member session 的 session_id 是 32-char hex（uuid4().hex）
+                # 直接按长度过滤，兼容所有历史数据，无需依赖 swarm_member_session_ids
+                if not re.fullmatch(r"[0-9a-f]{12}", sid):
+                    continue
                 results.append({
                     "session_id": sid,
                     "cwd": data.get("cwd", ""),
