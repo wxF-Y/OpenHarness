@@ -213,8 +213,14 @@ def list_session_snapshots(cwd: str | Path, limit: int = 20) -> list[dict[str, A
     return sessions[:limit]
 
 
+# 允许 12-char（普通 session）或 32-char（in-process member session）的纯 hex
+_SAFE_SESSION_ID_RE = re.compile(r"^[0-9a-f]{12,32}$")
+
+
 def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | None:
     """Load a specific session by ID."""
+    if not session_id or not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+        return None
     session_dir = get_project_session_dir(cwd)
     # Try named session first
     path = session_dir / f"session-{session_id}.json"
@@ -231,6 +237,8 @@ def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | Non
 
 def find_session_by_id(session_id: str) -> dict[str, Any] | None:
     """全局扫描所有项目目录，按 session_id 查找 snapshot 文件。"""
+    if not session_id or not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+        return None
     sessions_dir = get_sessions_dir()
     if not sessions_dir.exists():
         return None
@@ -241,7 +249,7 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
         if path.exists():
             try:
                 return _sanitize_snapshot_payload(json.loads(path.read_text(encoding="utf-8")))
-            except Exception:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 log.warning("Failed to load session file %s", path)
                 continue
     return None
