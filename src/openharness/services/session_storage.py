@@ -246,7 +246,12 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
 
 
 def _get_member_session_prefixes() -> set[str]:
-    """扫描 teams-tasks/{team}/{run}/team.json，收集所有 member 的 gateway UUID。"""
+    """扫描 teams-tasks/{team}/{run}/team.json，收集所有 member 的 gateway UUID。
+
+    member 的 gateway UUID 来自两个来源：
+    1. members[].session_id（member 启动后设置）
+    2. members[].cwd 的最后一段（managed workspace 路径，member 启动前已知）
+    """
     prefixes: set[str] = set()
     teams_tasks_dir = get_config_dir() / "teams-tasks"
     if not teams_tasks_dir.exists():
@@ -255,17 +260,23 @@ def _get_member_session_prefixes() -> set[str]:
         try:
             data = json.loads(team_json.read_text(encoding="utf-8"))
             for member in data.get("members", {}).values():
-                if isinstance(member, dict):
-                    sid = member.get("session_id", "")
-                    if sid:
-                        prefixes.add(sid)
+                if not isinstance(member, dict):
+                    continue
+                sid = member.get("session_id", "")
+                if sid:
+                    prefixes.add(sid)
+                cwd = member.get("cwd", "")
+                if cwd:
+                    uuid_part = Path(cwd).name
+                    if uuid_part:
+                        prefixes.add(uuid_part)
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             log.warning("Skipping unreadable team.json: %s", team_json)
     return prefixes
 
 
 def list_all_sessions() -> list[dict[str, Any]]:
-    """扫描所有项目目录下的 session-*.json，返回轻量摘要列表，按 created_at 倒序。"""
+    """扫描所有项目目录，每个目录只返回最新 session（latest.json），按 created_at 倒序。"""
     sessions_dir = get_sessions_dir()
     results: list[dict[str, Any]] = []
     if not sessions_dir.exists():
@@ -276,25 +287,26 @@ def list_all_sessions() -> list[dict[str, Any]]:
             continue
         if member_prefixes and any(project_dir.name.startswith(p) for p in member_prefixes):
             continue
-        for path in project_dir.glob("session-*.json"):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                results.append({
-                    "session_id": data.get("session_id", ""),
-                    "cwd": data.get("cwd", ""),
-                    "model": data.get("model", ""),
-                    "summary": data.get("summary", ""),
-                    "message_count": data.get("message_count", 0),
-                    "created_at": data.get("created_at", path.stat().st_mtime),
-                    "permission_mode": data.get("permission_mode"),
-                    "api_format": data.get("api_format"),
-                    "active_profile": data.get("active_profile"),
-                    "expert_role": data.get("expert_role"),
-                    "expert_role_label": data.get("expert_role_label"),
-                })
-            except Exception:
-                log.warning("Skipping unreadable session file %s", path)
-                continue
+        latest = project_dir / "latest.json"
+        if not latest.exists():
+            continue
+        try:
+            data = json.loads(latest.read_text(encoding="utf-8"))
+            results.append({
+                "session_id": data.get("session_id", ""),
+                "cwd": data.get("cwd", ""),
+                "model": data.get("model", ""),
+                "summary": data.get("summary", ""),
+                "message_count": data.get("message_count", 0),
+                "created_at": data.get("created_at", latest.stat().st_mtime),
+                "permission_mode": data.get("permission_mode"),
+                "api_format": data.get("api_format"),
+                "active_profile": data.get("active_profile"),
+                "expert_role": data.get("expert_role"),
+                "expert_role_label": data.get("expert_role_label"),
+            })
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            log.warning("Skipping unreadable latest.json: %s", latest)
     results.sort(key=lambda x: x["created_at"], reverse=True)
     return results
 
