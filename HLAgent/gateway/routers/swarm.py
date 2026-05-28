@@ -236,6 +236,7 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
     from fastapi.responses import StreamingResponse
 
     session_id: str | None = None
+    member_cwd: str | None = None
     if run_id:
         try:
             _rt, _rs = run_id.split("/", 1)
@@ -248,6 +249,7 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
                     m = run_tf.members.get(agent_id)
                     if m:
                         session_id = m.session_id
+                        member_cwd = m.cwd
         except Exception:
             pass
 
@@ -256,6 +258,31 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
         if not session_id:
             yield 'data: {"type":"error","text":"no session_id"}\n\n'
             return
+
+        # 先回放已保存的 snapshot（重启后无法从内存 stream queue 读取，需要从磁盘恢复）
+        if member_cwd:
+            try:
+                from openharness.services.session_backend import DEFAULT_SESSION_BACKEND
+                snapshot = DEFAULT_SESSION_BACKEND.load_by_id(member_cwd, session_id)
+                if snapshot:
+                    for msg in snapshot.get("messages", []):
+                        if msg.get("role") != "assistant":
+                            continue
+                        for block in msg.get("content", []) or []:
+                            btype = block.get("type")
+                            if btype == "text" and block.get("text"):
+                                yield f'data: {_json.dumps({"type": "delta", "text": block["text"]}, ensure_ascii=False)}\n\n'
+                            elif btype == "thinking" and block.get("thinking"):
+                                yield f'data: {_json.dumps({"type": "thinking_delta", "text": block["thinking"]}, ensure_ascii=False)}\n\n'
+                            elif btype == "tool_use":
+                                yield f'data: {_json.dumps({"type": "tool_start", "name": block.get("name", ""), "input": block.get("input", {})}, ensure_ascii=False)}\n\n'
+                            elif btype == "tool_result":
+                                output = block.get("content", "")
+                                if isinstance(output, list):
+                                    output = " ".join(b.get("text", "") for b in output if isinstance(b, dict))
+                                yield f'data: {_json.dumps({"type": "tool_end", "output": str(output)[:200]}, ensure_ascii=False)}\n\n'
+            except Exception:
+                pass
 
         q = await get_or_create_stream_queue(session_id)
         loop = _asyncio.get_event_loop()
