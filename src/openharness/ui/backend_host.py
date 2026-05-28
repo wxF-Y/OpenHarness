@@ -266,6 +266,8 @@ class ReactBackendHost:
                         usage=self._bundle.engine.total_usage,
                         session_id=self._bundle.session_id,
                         tool_metadata=self._bundle.engine.tool_metadata,
+                        expert_role=self._bundle.expert_role,
+                        expert_role_label=self._bundle.expert_role_label,
                     )
                 except Exception as save_exc:
                     log.warning("Failed to save snapshot on interrupt: %s", save_exc)

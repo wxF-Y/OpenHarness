@@ -267,6 +267,8 @@ def list_all_sessions() -> list[dict[str, Any]]:
                     "permission_mode": data.get("permission_mode"),
                     "api_format": data.get("api_format"),
                     "active_profile": data.get("active_profile"),
+                    "expert_role": data.get("expert_role"),
+                    "expert_role_label": data.get("expert_role_label"),
                 })
             except Exception:
                 log.warning("Skipping unreadable session file %s", path)
