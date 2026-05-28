@@ -186,6 +186,7 @@ class SwarmService:
             model=model,
             cwd=str(managed_path),
             system_prompt=leader_system_prompt,
+            expert_role_label=f"🤝 {team_name}",
         )
         _, host = session_mgr.create_with_id(
             orchestrator_session_id,
