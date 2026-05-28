@@ -214,3 +214,19 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     sids = [r["session_id"] for r in results]
     assert "aaa000000001" in sids, "leader session 应该在列表中"
     assert "bbb000000002" not in sids, "member session 不应该在列表中"
+
+
+def test_get_member_session_prefixes_corrupt_team_json(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    from openharness.config import paths as config_paths
+
+    monkeypatch.setattr(config_paths, "get_config_dir", lambda: tmp_path)
+
+    # 写一个损坏的 team.json
+    run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "team.json").write_text("not-json", encoding="utf-8")
+
+    # 损坏文件应跳过，返回空集合
+    result = session_storage._get_member_session_prefixes()
+    assert result == set()

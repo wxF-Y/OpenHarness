@@ -14,7 +14,7 @@ from uuid import uuid4
 log = logging.getLogger(__name__)
 
 from openharness.api.usage import UsageSnapshot
-from openharness.config.paths import get_sessions_dir
+from openharness.config.paths import get_config_dir, get_sessions_dir
 from openharness.engine.messages import ConversationMessage, sanitize_conversation_messages
 from openharness.utils.fs import atomic_write_text
 
@@ -246,8 +246,7 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
 
 
 def _get_member_session_prefixes() -> set[str]:
-    """扫描 teams-tasks/*/team.json，收集所有 member 的 gateway UUID。"""
-    from openharness.config.paths import get_config_dir
+    """扫描 teams-tasks/{team}/{run}/team.json，收集所有 member 的 gateway UUID。"""
     prefixes: set[str] = set()
     teams_tasks_dir = get_config_dir() / "teams-tasks"
     if not teams_tasks_dir.exists():
@@ -260,7 +259,7 @@ def _get_member_session_prefixes() -> set[str]:
                     sid = member.get("session_id", "")
                     if sid:
                         prefixes.add(sid)
-        except Exception:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             log.warning("Skipping unreadable team.json: %s", team_json)
     return prefixes
 
