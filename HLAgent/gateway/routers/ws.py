@@ -5,11 +5,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from openharness.ui.protocol import FrontendRequest, BackendEvent
 
 from services.session_manager import session_mgr
+from hlagent_sdk import AgentSessionConfig, create_host
+from openharness.services.session_storage import find_session_by_id
+from services.session_manager import SessionEntry
+
+# session_id 格式：32-char gateway UUID 或 12-char OpenHarness 内部 ID
+_SESSION_ID_RE = re.compile(r"^[0-9a-f]{12,32}$")
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
@@ -24,14 +31,48 @@ router = APIRouter(tags=["ws"])
 # consumers; whichever wins the race gets tool_completed — the real
 # browser connection may end up with the tool stuck as pending forever.
 _active_event_tasks: dict[str, asyncio.Task] = {}
+# asyncio is single-threaded: the dict write between `not in` check and assignment
+# cannot be preempted by another coroutine (no await between them), so this is safe.
+_recovery_locks: dict[str, asyncio.Lock] = {}
 
 
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        await websocket.close(code=4004, reason="Invalid session ID")
+        return
     host = session_mgr.get(session_id)
     if host is None:
-        await websocket.close(code=4004, reason="Session not found")
-        return
+        if session_id not in _recovery_locks:
+            _recovery_locks[session_id] = asyncio.Lock()
+        async with _recovery_locks[session_id]:
+            host = session_mgr.get(session_id)
+            if host is None:
+                snap = await asyncio.to_thread(find_session_by_id, session_id)
+                if snap is None:
+                    await websocket.close(code=4004, reason="Session not found")
+                    return
+                try:
+                    config = AgentSessionConfig(
+                        model=snap.get("model"),
+                        cwd=snap.get("cwd"),
+                        permission_mode=snap.get("permission_mode"),
+                        api_format=snap.get("api_format"),
+                        active_profile=snap.get("active_profile"),
+                    )
+                    recovered_host = create_host(config, restore_snapshot=snap)
+                    session_mgr._sessions[session_id] = SessionEntry(
+                        host=recovered_host,
+                        cwd=snap.get("cwd"),
+                        model=snap.get("model"),
+                        expert_role=snap.get("expert_role"),
+                        expert_role_label=snap.get("expert_role_label"),
+                    )
+                    host = recovered_host
+                except Exception as exc:
+                    log.warning("Failed to recover session %s from disk: %s", session_id, exc)
+                    await websocket.close(code=4004, reason="Session not found")
+                    return
 
     # Displace any existing event consumer for this session before accepting.
     # If the old task was blocked in next_event() the queue item is NOT

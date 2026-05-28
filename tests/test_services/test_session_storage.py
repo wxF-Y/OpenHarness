@@ -91,3 +91,124 @@ def test_load_session_snapshot_sanitizes_legacy_empty_assistant_messages(tmp_pat
     assert snapshot["message_count"] == 2
     assert [message["role"] for message in snapshot["messages"]] == ["user", "assistant"]
     assert snapshot["messages"][1]["content"][0]["text"] == "world"
+
+
+def test_find_session_by_id_found(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+
+    proj_dir = tmp_path / "myproject-abc123"
+    proj_dir.mkdir()
+    sid = "abc123def456"
+    (proj_dir / f"session-{sid}.json").write_text(
+        '{"session_id": "abc123def456", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "hello", "message_count": 0, "created_at": 1000.0}',
+        encoding="utf-8",
+    )
+
+    result = session_storage.find_session_by_id(sid)
+    assert result is not None
+    assert result["session_id"] == sid
+    assert result["cwd"] == "/tmp/proj"
+
+
+def test_find_session_by_id_not_found(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    (tmp_path / "proj-abc").mkdir()
+    assert session_storage.find_session_by_id("nonexistent") is None
+
+
+def test_find_session_by_id_corrupt_file(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    proj_dir = tmp_path / "proj-abc"
+    proj_dir.mkdir()
+    sid = "abc123def456"
+    (proj_dir / f"session-{sid}.json").write_text("not-json", encoding="utf-8")
+    # 损坏文件应跳过并继续，最终返回 None（无其他目录有该文件）
+    assert session_storage.find_session_by_id(sid) is None
+
+
+def test_list_all_sessions(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
+
+    for i, (proj, sid, ts) in enumerate([
+        ("proj1-aaa", "aaa000000001", 2000.0),
+        ("proj2-bbb", "bbb000000002", 1000.0),
+    ]):
+        d = tmp_path / proj
+        d.mkdir()
+        content = (
+            f'{{"session_id": "{sid}", "cwd": "/tmp/p{i}", "model": "claude", '
+            f'"messages": [], "summary": "test", "message_count": 0, "created_at": {ts}}}'
+        )
+        (d / f"session-{sid}.json").write_text(content, encoding="utf-8")
+
+    results = session_storage.list_all_sessions()
+    assert len(results) == 2
+    assert results[0]["session_id"] == "aaa000000001"
+    assert results[1]["session_id"] == "bbb000000002"
+
+
+def test_list_all_sessions_skips_corrupt(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
+
+    good_dir = tmp_path / "proj-good"
+    good_dir.mkdir()
+    (good_dir / "session-aaa000000001.json").write_text(
+        '{"session_id": "aaa000000001", "cwd": "/tmp/good", "model": "claude", '
+        '"messages": [], "summary": "ok", "message_count": 0, "created_at": 1000.0}',
+        encoding="utf-8",
+    )
+
+    bad_dir = tmp_path / "proj-bad"
+    bad_dir.mkdir()
+    (bad_dir / "session-bbb000000002.json").write_text("not-json", encoding="utf-8")
+
+    results = session_storage.list_all_sessions()
+    assert len(results) == 1
+    assert results[0]["session_id"] == "aaa000000001"
+
+
+def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
+
+    # leader session 目录
+    leader_dir = tmp_path / "myproject-aaa111"
+    leader_dir.mkdir()
+    (leader_dir / "session-aaa000000001.json").write_text(
+        '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0}',
+        encoding="utf-8",
+    )
+    # member session 在同一目录，含 parent_session_id 标记
+    (leader_dir / "session-member123abc.json").write_text(
+        '{"session_id": "member123abc", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "member task", "message_count": 0, "created_at": 1000.0, '
+        '"parent_session_id": "aaa000000001"}',
+        encoding="utf-8",
+    )
+
+    results = session_storage.list_all_sessions()
+    sids = [r["session_id"] for r in results]
+    assert "aaa000000001" in sids, "leader session 应该在列表中"
+    assert "member123abc" not in sids, "含 parent_session_id 的 member session 不应该在列表中"
+
+
+def test_get_member_session_prefixes_no_data(tmp_path, monkeypatch):
+    """list_all_sessions 在空目录上返回空列表（不依赖 swarm_member_session_ids 机制）。"""
+    from openharness.services import session_storage
+
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
+
+    results = session_storage.list_all_sessions()
+    assert results == []

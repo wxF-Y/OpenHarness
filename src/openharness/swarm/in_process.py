@@ -350,6 +350,7 @@ async def _run_query_loop(
                     messages=messages,
                     usage=UsageSnapshot(input_tokens=ctx.total_tokens, output_tokens=0),
                     session_id=config.session_id,
+                    parent_session_id=config.parent_session_id,
                 )
 
         # Send idle_notification to leader with full result

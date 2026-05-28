@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 
 _SAFE_SEGMENT_RE = re.compile(r'^[a-zA-Z0-9_\-\.]{1,128}$')
 _SAFE_RUN_SLUG_RE = re.compile(r'^[\w\-\.]{1,256}$', re.UNICODE)
+# agent_id 形如 "name@team"，两段都需符合 _SAFE_SEGMENT_RE
+_SAFE_AGENT_ID_RE = re.compile(r'^[a-zA-Z0-9_\-\.]{1,128}@[a-zA-Z0-9_\-\.]{1,128}$')
 
 
 def _get_svc(request: Request):
@@ -235,7 +237,11 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
     import json as _json
     from fastapi.responses import StreamingResponse
 
+    if not _SAFE_AGENT_ID_RE.fullmatch(agent_id):
+        raise HTTPException(400, "invalid agent_id")
+
     session_id: str | None = None
+    member_cwd: str | None = None
     if run_id:
         try:
             _rt, _rs = run_id.split("/", 1)
@@ -248,14 +254,35 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
                     m = run_tf.members.get(agent_id)
                     if m:
                         session_id = m.session_id
-        except Exception:
-            pass
+                        member_cwd = m.cwd
+        except Exception as exc:
+            log.debug("Failed to resolve run_id %s for agent %s: %s", run_id, agent_id, exc)
 
     async def event_generator():
         from openharness.swarm.in_process import get_or_create_stream_queue, cleanup_stream_queue
         if not session_id:
             yield 'data: {"type":"error","text":"no session_id"}\n\n'
             return
+
+        # 先回放已保存的 snapshot（重启后无法从内存 stream queue 读取，需要从磁盘恢复）
+        if member_cwd:
+            try:
+                from openharness.services.session_backend import DEFAULT_SESSION_BACKEND
+                snapshot = DEFAULT_SESSION_BACKEND.load_by_id(member_cwd, session_id)
+                if snapshot:
+                    for msg in snapshot.get("messages", []):
+                        if msg.get("role") != "assistant":
+                            continue
+                        for block in msg.get("content", []) or []:
+                            btype = block.get("type")
+                            if btype == "text" and block.get("text"):
+                                yield f'data: {_json.dumps({"type": "delta", "text": block["text"]}, ensure_ascii=False)}\n\n'
+                            elif btype == "thinking" and block.get("thinking"):
+                                yield f'data: {_json.dumps({"type": "thinking_delta", "text": block["thinking"]}, ensure_ascii=False)}\n\n'
+                            elif btype == "tool_use":
+                                yield f'data: {_json.dumps({"type": "tool_start", "name": block.get("name", ""), "input": block.get("input", {})}, ensure_ascii=False)}\n\n'
+            except Exception as exc:
+                log.warning("Failed to replay snapshot for session %s: %s", session_id, exc)
 
         q = await get_or_create_stream_queue(session_id)
         loop = _asyncio.get_event_loop()

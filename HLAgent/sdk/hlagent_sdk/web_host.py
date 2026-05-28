@@ -34,6 +34,8 @@ class AgentSessionConfig:
     api_key: str | None = None
     api_format: str | None = None
     active_profile: str | None = None
+    expert_role: str | None = None
+    expert_role_label: str | None = None
 
 
 class WebBackendHost(ReactBackendHost):
@@ -387,16 +389,27 @@ class WebBackendHost(ReactBackendHost):
             await self._event_queue.put(None)
 
 
-def create_host(config: AgentSessionConfig) -> WebBackendHost:
-    """Create a WebBackendHost from a high-level AgentSessionConfig."""
+def create_host(
+    config: AgentSessionConfig,
+    restore_snapshot: dict | None = None,
+) -> WebBackendHost:
+    """Create a WebBackendHost from a high-level AgentSessionConfig.
+
+    若传入 restore_snapshot，从 snapshot 中恢复消息历史和配置（config 显式值优先）。
+    """
+    snap = restore_snapshot or {}
     host_config = BackendHostConfig(
-        model=config.model,
-        cwd=config.cwd,
-        permission_mode=config.permission_mode,
-        system_prompt=config.system_prompt,
+        model=config.model or snap.get("model"),
+        cwd=config.cwd or snap.get("cwd"),
+        permission_mode=config.permission_mode or snap.get("permission_mode"),
+        system_prompt=config.system_prompt or snap.get("system_prompt"),
         max_turns=config.max_turns,
         api_key=config.api_key,
-        api_format=config.api_format,
-        active_profile=config.active_profile,
+        api_format=config.api_format or snap.get("api_format"),
+        active_profile=config.active_profile or snap.get("active_profile"),
+        restore_messages=snap.get("messages") or None,
+        restore_tool_metadata=snap.get("tool_metadata") or None,
+        expert_role=config.expert_role or snap.get("expert_role"),
+        expert_role_label=config.expert_role_label or snap.get("expert_role_label"),
     )
     return WebBackendHost(host_config)

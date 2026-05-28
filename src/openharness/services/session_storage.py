@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from hashlib import sha1
@@ -10,8 +11,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+log = logging.getLogger(__name__)
+
 from openharness.api.usage import UsageSnapshot
-from openharness.config.paths import get_sessions_dir
+from openharness.config.paths import get_config_dir, get_sessions_dir
 from openharness.engine.messages import ConversationMessage, sanitize_conversation_messages
 from openharness.utils.fs import atomic_write_text
 
@@ -70,6 +73,12 @@ def save_session_snapshot(
     usage: UsageSnapshot,
     session_id: str | None = None,
     tool_metadata: dict[str, object] | None = None,
+    permission_mode: str | None = None,
+    api_format: str | None = None,
+    active_profile: str | None = None,
+    expert_role: str | None = None,
+    expert_role_label: str | None = None,
+    parent_session_id: str | None = None,
 ) -> Path:
     """Persist a session snapshot. Saves both by ID and as latest."""
     session_dir = get_project_session_dir(cwd)
@@ -94,6 +103,12 @@ def save_session_snapshot(
         "created_at": now,
         "summary": summary,
         "message_count": len(messages),
+        "permission_mode": permission_mode,
+        "api_format": api_format,
+        "active_profile": active_profile,
+        "expert_role": expert_role,
+        "expert_role_label": expert_role_label,
+        "parent_session_id": parent_session_id,
     }
     # Serialize — clean any surrogate characters that break utf-8 encoding
     try:
@@ -198,8 +213,14 @@ def list_session_snapshots(cwd: str | Path, limit: int = 20) -> list[dict[str, A
     return sessions[:limit]
 
 
+# 允许 12-char（普通 session）或 32-char（in-process member session）的纯 hex
+_SAFE_SESSION_ID_RE = re.compile(r"^[0-9a-f]{12,32}$")
+
+
 def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | None:
     """Load a specific session by ID."""
+    if not session_id or not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+        return None
     session_dir = get_project_session_dir(cwd)
     # Try named session first
     path = session_dir / f"session-{session_id}.json"
@@ -212,6 +233,65 @@ def load_session_by_id(cwd: str | Path, session_id: str) -> dict[str, Any] | Non
         if data.get("session_id") == session_id or session_id == "latest":
             return data
     return None
+
+
+def find_session_by_id(session_id: str) -> dict[str, Any] | None:
+    """全局扫描所有项目目录，按 session_id 查找 snapshot 文件。"""
+    if not session_id or not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+        return None
+    sessions_dir = get_sessions_dir()
+    if not sessions_dir.exists():
+        return None
+    for project_dir in sessions_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        path = project_dir / f"session-{session_id}.json"
+        if path.exists():
+            try:
+                return _sanitize_snapshot_payload(json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                log.warning("Failed to load session file %s", path)
+                continue
+    return None
+
+
+def list_all_sessions() -> list[dict[str, Any]]:
+    """扫描所有项目目录下的 session-*.json，返回轻量摘要列表，按 created_at 倒序。
+
+    同一 workspace 下可能有多个独立 session（不同对话），全部返回；
+    member session（含 parent_session_id 字段）会被过滤，只展示用户级 session。
+    """
+    sessions_dir = get_sessions_dir()
+    results: list[dict[str, Any]] = []
+    if not sessions_dir.exists():
+        return results
+    for project_dir in sessions_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+        for path in project_dir.glob("session-*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                # member session 在自身 snapshot 中声明 parent_session_id，是权威标识
+                if data.get("parent_session_id"):
+                    continue
+                results.append({
+                    "session_id": data.get("session_id", ""),
+                    "cwd": data.get("cwd", ""),
+                    "model": data.get("model", ""),
+                    "summary": data.get("summary", ""),
+                    "message_count": data.get("message_count", 0),
+                    "created_at": data.get("created_at", path.stat().st_mtime),
+                    "permission_mode": data.get("permission_mode"),
+                    "api_format": data.get("api_format"),
+                    "active_profile": data.get("active_profile"),
+                    "expert_role": data.get("expert_role"),
+                    "expert_role_label": data.get("expert_role_label"),
+                })
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                log.warning("Skipping unreadable session file %s", path)
+                continue
+    results.sort(key=lambda x: x["created_at"], reverse=True)
+    return results
 
 
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{12}$")
