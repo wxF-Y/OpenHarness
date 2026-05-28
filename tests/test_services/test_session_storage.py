@@ -175,14 +175,11 @@ def test_list_all_sessions_skips_corrupt(tmp_path, monkeypatch):
 
 def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     from openharness.services import session_storage
-    from openharness.config import paths as config_paths
 
     monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
     member_uuid = "abcdef1234567890abcdef1234567890"
-
-    # 模拟 get_config_dir 返回 tmp_path（teams-tasks 在其下）
-    monkeypatch.setattr(config_paths, "get_config_dir", lambda: tmp_path)
 
     # 创建 teams-tasks/team1/run1/team.json
     run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
@@ -218,9 +215,8 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
 
 def test_get_member_session_prefixes_corrupt_team_json(tmp_path, monkeypatch):
     from openharness.services import session_storage
-    from openharness.config import paths as config_paths
 
-    monkeypatch.setattr(config_paths, "get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
 
     # 写一个损坏的 team.json
     run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
