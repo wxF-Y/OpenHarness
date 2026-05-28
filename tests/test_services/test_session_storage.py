@@ -171,3 +171,46 @@ def test_list_all_sessions_skips_corrupt(tmp_path, monkeypatch):
     results = session_storage.list_all_sessions()
     assert len(results) == 1
     assert results[0]["session_id"] == "aaa000000001"
+
+
+def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
+    from openharness.services import session_storage
+    from openharness.config import paths as config_paths
+
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+
+    member_uuid = "abcdef1234567890abcdef1234567890"
+
+    # 模拟 get_config_dir 返回 tmp_path（teams-tasks 在其下）
+    monkeypatch.setattr(config_paths, "get_config_dir", lambda: tmp_path)
+
+    # 创建 teams-tasks/team1/run1/team.json
+    run_dir = tmp_path / "teams-tasks" / "team1" / "run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "team.json").write_text(
+        '{"lead_session_id": "aaa000000001", "members": {"agent@team": {"session_id": "' + member_uuid + '"}}}',
+        encoding="utf-8",
+    )
+
+    # leader session 目录（普通名称）
+    leader_dir = tmp_path / "myproject-aaa111"
+    leader_dir.mkdir()
+    (leader_dir / "session-aaa000000001.json").write_text(
+        '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "leader", "message_count": 0, "created_at": 2000.0}',
+        encoding="utf-8",
+    )
+
+    # member session 目录（以 member UUID 开头）
+    member_dir = tmp_path / f"{member_uuid}-bbb222333444"
+    member_dir.mkdir()
+    (member_dir / "session-bbb000000002.json").write_text(
+        '{"session_id": "bbb000000002", "cwd": "/tmp/workspace", "model": "claude", '
+        '"messages": [], "summary": "member", "message_count": 0, "created_at": 1000.0}',
+        encoding="utf-8",
+    )
+
+    results = session_storage.list_all_sessions()
+    sids = [r["session_id"] for r in results]
+    assert "aaa000000001" in sids, "leader session 应该在列表中"
+    assert "bbb000000002" not in sids, "member session 不应该在列表中"

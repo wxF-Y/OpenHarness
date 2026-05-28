@@ -245,14 +245,37 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _get_member_session_prefixes() -> set[str]:
+    """扫描 teams-tasks/*/team.json，收集所有 member 的 gateway UUID。"""
+    from openharness.config.paths import get_config_dir
+    prefixes: set[str] = set()
+    teams_tasks_dir = get_config_dir() / "teams-tasks"
+    if not teams_tasks_dir.exists():
+        return prefixes
+    for team_json in teams_tasks_dir.rglob("team.json"):
+        try:
+            data = json.loads(team_json.read_text(encoding="utf-8"))
+            for member in data.get("members", {}).values():
+                if isinstance(member, dict):
+                    sid = member.get("session_id", "")
+                    if sid:
+                        prefixes.add(sid)
+        except Exception:
+            log.warning("Skipping unreadable team.json: %s", team_json)
+    return prefixes
+
+
 def list_all_sessions() -> list[dict[str, Any]]:
     """扫描所有项目目录下的 session-*.json，返回轻量摘要列表，按 created_at 倒序。"""
     sessions_dir = get_sessions_dir()
     results: list[dict[str, Any]] = []
     if not sessions_dir.exists():
         return results
+    member_prefixes = _get_member_session_prefixes()
     for project_dir in sessions_dir.iterdir():
         if not project_dir.is_dir():
+            continue
+        if member_prefixes and any(project_dir.name.startswith(p) for p in member_prefixes):
             continue
         for path in project_dir.glob("session-*.json"):
             try:
