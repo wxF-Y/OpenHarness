@@ -107,6 +107,10 @@ async def list_sessions() -> list[SessionSummary]:
                         text = str(content)
                     title = _extract_session_title(text)
                     break
+        # 把内存 session 的 key（gw_sid）和实际 internal_id 都加入去重集
+        # 恢复场景：gw_sid = 磁盘原始 session_id；build_runtime 会生成新的 bundle.session_id，
+        # 所以两者都要登记，确保磁盘扫描不会重复添加同一 session
+        seen_internal_ids.add(gw_sid)
         internal_id = entry.host.get_session_id()
         if internal_id is None and entry.cwd:
             # host 未就绪时，扫描 session-*.json 取最新的内部 session_id（不依赖 latest.json）
