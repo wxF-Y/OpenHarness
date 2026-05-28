@@ -246,54 +246,54 @@ def find_session_by_id(session_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _get_member_session_prefixes() -> set[str]:
-    """从所有 session 的 tool_metadata.swarm_member_session_ids 中收集 member gateway UUID。
+def _get_member_session_ids() -> set[str]:
+    """从所有 session 的 tool_metadata.swarm_member_session_ids 中收集 member session UUID。
 
-    leader session 在 spawn member 时将 member 的 gateway UUID 写入自身 tool_metadata，
-    并通过 _PERSISTED_TOOL_METADATA_KEYS 持久化到 snapshot 文件。
+    member session 与 leader session 可能在同一目录，因此过滤在文件级别进行，
+    对比 session-*.json 的 session_id 字段与此集合。
     """
-    prefixes: set[str] = set()
+    member_ids: set[str] = set()
     sessions_dir = get_sessions_dir()
     if not sessions_dir.exists():
-        return prefixes
+        return member_ids
     for project_dir in sessions_dir.iterdir():
         if not project_dir.is_dir():
             continue
-        latest = project_dir / "latest.json"
-        if not latest.exists():
-            continue
-        try:
-            data = json.loads(latest.read_text(encoding="utf-8"))
-            member_ids = data.get("tool_metadata", {}).get("swarm_member_session_ids") or []
-            for mid in member_ids:
-                if mid:
-                    prefixes.add(str(mid))
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            pass
-    return prefixes
+        # 读每个目录的 session-*.json（leader session 含 swarm_member_session_ids）
+        for path in project_dir.glob("session-*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                ids = data.get("tool_metadata", {}).get("swarm_member_session_ids") or []
+                for mid in ids:
+                    if mid:
+                        member_ids.add(str(mid))
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                pass
+    return member_ids
 
 
 def list_all_sessions() -> list[dict[str, Any]]:
     """扫描所有项目目录下的 session-*.json，返回轻量摘要列表，按 created_at 倒序。
 
     同一 workspace 下可能有多个独立 session（不同对话），全部返回；
-    Swarm member session 通过 leader snapshot 的 swarm_member_session_ids 过滤。
+    Swarm member session 的 session_id 与 leader 的 swarm_member_session_ids 匹配时过滤。
     """
     sessions_dir = get_sessions_dir()
     results: list[dict[str, Any]] = []
     if not sessions_dir.exists():
         return results
-    member_prefixes = _get_member_session_prefixes()
+    member_session_ids = _get_member_session_ids()
     for project_dir in sessions_dir.iterdir():
         if not project_dir.is_dir():
-            continue
-        if member_prefixes and any(project_dir.name.startswith(p) for p in member_prefixes):
             continue
         for path in project_dir.glob("session-*.json"):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
+                sid = data.get("session_id", "")
+                if sid and sid in member_session_ids:
+                    continue  # 跳过 member session
                 results.append({
-                    "session_id": data.get("session_id", ""),
+                    "session_id": sid,
                     "cwd": data.get("cwd", ""),
                     "model": data.get("model", ""),
                     "summary": data.get("summary", ""),
