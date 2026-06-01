@@ -16,14 +16,14 @@ from fastapi import APIRouter, File, HTTPException, Path as FPath, UploadFile
 from pydantic import BaseModel, Field
 
 from hlagent_sdk import AgentSessionConfig
-from openharness.services.session_storage import delete_session_snapshot, list_all_sessions, list_session_snapshots
+from openharness.services.session_storage import delete_session_snapshot, find_session_by_id, list_all_sessions, list_session_snapshots
 from services.session_manager import session_mgr
 
 log = logging.getLogger(__name__)
 
 _workspaces_root = (Path(os.environ.get("OPENHARNESS_CONFIG_DIR", Path.home() / ".hlagent")) / "workspaces").resolve()
 
-_SESSION_ID = Annotated[str, FPath(pattern=r"^[0-9a-f]{32}$", description="32-character hex session ID")]
+_SESSION_ID = Annotated[str, FPath(pattern=r"^[0-9a-f]{12,32}$", description="12-32 character hex session ID")]
 
 
 def _is_managed(cwd: str | None) -> bool:
@@ -259,26 +259,44 @@ async def get_session(session_id: _SESSION_ID) -> dict[str, Any]:
 @router.delete("/{session_id}", status_code=204)
 async def delete_session(session_id: _SESSION_ID) -> None:
     entry = session_mgr.get_entry(session_id)
-    if entry is None:
-        raise HTTPException(404, "Session not found")
-    cwd_str = entry.cwd
-    internal_sid = entry.host.get_session_id()
 
-    try:
-        await entry.host.stop()
-    except Exception as exc:
-        log.warning("Error stopping session %s: %s", session_id, exc)
+    cwd_str: str | None = None
+    internal_sid: str | None = None
+    label = ""
 
-    session_mgr.remove(session_id)
+    if entry is not None:
+        cwd_str = entry.cwd
+        internal_sid = entry.host.get_session_id()
+        label = entry.expert_role_label or ""
 
-    from routers.ws import _recovery_locks
-    _recovery_locks.pop(session_id, None)
-
-    if internal_sid:
         try:
-            delete_session_snapshot(cwd_str, internal_sid)
+            await entry.host.stop()
         except Exception as exc:
-            log.warning("Failed to delete session snapshot %s: %s", internal_sid, exc)
+            log.warning("Error stopping session %s: %s", session_id, exc)
+
+        session_mgr.remove(session_id)
+
+        from routers.ws import _recovery_locks
+        _recovery_locks.pop(session_id, None)
+    else:
+        # Disk-only session (never opened in this server lifetime).
+        snap = await asyncio.to_thread(find_session_by_id, session_id)
+        if snap is None:
+            raise HTTPException(404, "Session not found")
+        cwd_str = snap.get("cwd")
+        internal_sid = snap.get("session_id")
+        label = snap.get("expert_role_label") or ""
+
+    # Delete the URL session_id snapshot (recovery source) AND the
+    # bundle-generated internal_sid snapshot when they differ (recovered case:
+    # build_runtime generates a new bundle session_id post-restore, so writes
+    # land in a second session-<internal_sid>.json file).
+    snapshot_ids = {sid for sid in (session_id, internal_sid) if sid}
+    for sid in snapshot_ids:
+        try:
+            delete_session_snapshot(cwd_str, sid)
+        except Exception as exc:
+            log.warning("Failed to delete session snapshot %s: %s", sid, exc)
 
     if cwd_str:
         cwd_resolved = Path(cwd_str).resolve()
@@ -294,7 +312,6 @@ async def delete_session(session_id: _SESSION_ID) -> None:
     # Clean up the specific teams-tasks run directory for team sessions.
     # expert_role_label is "🤝 {team_name}" for team sessions.
     # Find the run whose team.json has lead_session_id == internal_sid (the leader's session).
-    label = entry.expert_role_label or ""
     if label.startswith("🤝 ") and internal_sid:
         team_name = label[len("🤝 "):].strip()
         template_name = re.sub(r"-\d{8}-\d{6}$", "", team_name)
