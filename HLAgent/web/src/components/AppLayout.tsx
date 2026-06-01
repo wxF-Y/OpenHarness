@@ -318,7 +318,6 @@ function ChatView({ sessionId, sendRequest }: ChatViewProps) {
               >
                 <SwarmMemberPane
                   member={m}
-                  onClose={() => setSelectedMemberId(null)}
                   runId={currentRunSlug ? `${fetchTeamName}/${currentRunSlug}` : undefined}
                 />
               </div>

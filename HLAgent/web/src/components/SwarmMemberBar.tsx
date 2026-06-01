@@ -77,7 +77,11 @@ export default function SwarmMemberBar({ members, selectedMemberId, onSelect, al
               }}
             >
               <span style={{ flexShrink: 0 }}>
-                {active ? (STATUS_ICON[m.status ?? ''] ?? '⬛') : '⏳'}
+                {active
+                  ? (m.status === 'active' && !m.last_message
+                      ? '🟡'
+                      : (STATUS_ICON[m.status ?? ''] ?? '⬛'))
+                  : '⏳'}
               </span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</span>
             </button>

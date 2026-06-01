@@ -271,7 +271,23 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
                 snapshot = DEFAULT_SESSION_BACKEND.load_by_id(member_cwd, session_id)
                 if snapshot:
                     for msg in snapshot.get("messages", []):
-                        if msg.get("role") != "assistant":
+                        role = msg.get("role")
+                        content = msg.get("content")
+                        if role == "user":
+                            # Surface leader→member input (initial prompt + follow-ups)
+                            if isinstance(content, str):
+                                user_text = content
+                            elif isinstance(content, list):
+                                user_text = "".join(
+                                    (b.get("text") or "") for b in content
+                                    if isinstance(b, dict) and b.get("type") == "text"
+                                )
+                            else:
+                                user_text = ""
+                            if user_text.strip():
+                                yield f'data: {_json.dumps({"type": "user", "text": user_text}, ensure_ascii=False)}\n\n'
+                            continue
+                        if role != "assistant":
                             continue
                         for block in msg.get("content", []) or []:
                             btype = block.get("type")
@@ -281,6 +297,9 @@ async def stream_agent_output(agent_id: str, run_id: str | None = None):
                                 yield f'data: {_json.dumps({"type": "thinking_delta", "text": block["thinking"]}, ensure_ascii=False)}\n\n'
                             elif btype == "tool_use":
                                 yield f'data: {_json.dumps({"type": "tool_start", "name": block.get("name", ""), "input": block.get("input", {})}, ensure_ascii=False)}\n\n'
+                    # Mark end of historical replay so frontend can flush buffers
+                    # and clear the "streaming" indicator before live events arrive.
+                    yield 'data: {"type":"replay_end"}\n\n'
             except Exception as exc:
                 log.warning("Failed to replay snapshot for session %s: %s", session_id, exc)
 

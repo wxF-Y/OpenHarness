@@ -6,7 +6,6 @@ import { useSwarmStore } from '../stores/swarmStore'
 
 interface Props {
   member: TeamMember
-  onClose: () => void
   runId?: string
 }
 
@@ -53,7 +52,7 @@ function parseSessionToItems(snapshot: { messages?: Record<string, unknown>[] })
   return items
 }
 
-export default function SwarmMemberPane({ member, onClose, runId }: Props) {
+export default function SwarmMemberPane({ member, runId }: Props) {
   const [items, setItems] = useState<TranscriptItem[]>([])
   const [assistantBuffer, setAssistantBuffer] = useState('')
   const [thinkingBuffer, setThinkingBuffer] = useState('')
@@ -71,6 +70,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
   const t = teammates.find((x) => x.name === member.name)
   const sessionId = t?.session_id ?? member.session_id
   const memberStatus = t?.status ?? member.status
+  const lastMessage = t?.last_message
 
   // Load full transcript from session JSON
   const loadFullTranscript = async () => {
@@ -109,7 +109,7 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     assistantBufferRef.current = ''
     thinkingBufferRef.current = ''
     setItems([])
-    setIsStreaming(true)
+    setIsStreaming(false)
     setAssistantBuffer('')
     setThinkingBuffer('')
 
@@ -135,17 +135,28 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
     es.onmessage = (e) => {
       try {
         const data: { type: string; text?: string; name?: string; output?: string; input?: Record<string, unknown> } = JSON.parse(e.data)
-        if (data.type === 'delta' && data.text) {
+        if (data.type === 'user' && data.text) {
+          flushBuffers()
+          setItems((it) => [...it, { role: 'user', text: data.text! }])
+        } else if (data.type === 'delta' && data.text) {
           assistantBufferRef.current += data.text
           setAssistantBuffer(assistantBufferRef.current)
+          setIsStreaming(true)
         } else if (data.type === 'thinking_delta' && data.text) {
           thinkingBufferRef.current += data.text
           setThinkingBuffer(thinkingBufferRef.current)
+          setIsStreaming(true)
         } else if (data.type === 'tool_start') {
           flushBuffers()
+          setIsStreaming(true)
           setItems((it) => [...it, { role: 'tool', text: '', tool_name: data.name ?? 'tool', tool_input: data.input ?? {} }])
         } else if (data.type === 'tool_end') {
           setItems((it) => [...it, { role: 'tool_result', text: (data.output ?? '').slice(0, 500) }])
+        } else if (data.type === 'replay_end') {
+          // Historical snapshot replay finished — flush buffers and clear the
+          // streaming flag. Subsequent deltas (if any) are live and will set it again.
+          flushBuffers()
+          setIsStreaming(false)
         } else if (data.type === 'done') {
           setIsStreaming(false)
           es.close()
@@ -194,6 +205,16 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
 
   const isEmpty = items.length === 0 && !assistantBuffer && !thinkingBuffer
 
+  // Status icon — kept consistent with SwarmMemberBar:
+  //   no session yet → ⏳; active+no msg → 🟡; active+has msg → 🟢; idle → 🟡; otherwise ⬛
+  const statusIcon = !sessionId
+    ? '⏳'
+    : memberStatus === 'active'
+      ? (lastMessage ? '🟢' : '🟡')
+      : memberStatus === 'idle'
+        ? '🟡'
+        : '⬛'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative', backgroundColor: '#1e1e2e' }}>
       {/* Header */}
@@ -202,12 +223,9 @@ export default function SwarmMemberPane({ member, onClose, runId }: Props) {
         padding: '0 0.5rem', backgroundColor: '#181825', borderBottom: '1px solid #313244',
       }}>
         <span style={{ fontSize: '0.72rem', color: '#89b4fa', background: '#313244', borderRadius: '3px', padding: '0.1rem 0.4rem', flex: 1 }}>
-          {memberStatus === 'active' ? '🟢' : '🟡'} {member.name}
-          {isStreaming && <span style={{ color: '#f9e2af', marginLeft: '0.4rem', fontSize: '0.65rem' }}>• 流式输出中</span>}
+          {statusIcon} {member.name}
+          {isStreaming && memberStatus === 'active' && <span style={{ color: '#f9e2af', marginLeft: '0.4rem', fontSize: '0.65rem' }}>• 流式输出中</span>}
         </span>
-        <button onClick={onClose}
-          style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '0.8rem', padding: '0 0.2rem', lineHeight: 1 }}
-          title="收起">←</button>
       </div>
 
       {/* Content — TranscriptViewer style */}
