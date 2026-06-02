@@ -36,6 +36,7 @@ class AgentSessionConfig:
     active_profile: str | None = None
     expert_role: str | None = None
     expert_role_label: str | None = None
+    source: str | None = None
 
 
 class WebBackendHost(ReactBackendHost):
@@ -411,5 +412,8 @@ def create_host(
         restore_tool_metadata=snap.get("tool_metadata") or None,
         expert_role=config.expert_role or snap.get("expert_role"),
         expert_role_label=config.expert_role_label or snap.get("expert_role_label"),
+        # source 不从 snapshot 继承：用户恢复任何 session 都视为用户行为，
+        # 不应在新写入的 snapshot 上重新打 cron 标，否则会导致该 session 永久从对话列表消失。
+        source=config.source,
     )
     return WebBackendHost(host_config)

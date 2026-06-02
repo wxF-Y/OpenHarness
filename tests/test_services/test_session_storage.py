@@ -203,6 +203,54 @@ def test_list_all_sessions_filters_member_sessions(tmp_path, monkeypatch):
     assert "member123abc" not in sids, "含 parent_session_id 的 member session 不应该在列表中"
 
 
+def test_list_all_sessions_filters_cron_source(tmp_path, monkeypatch):
+    """cron 等非用户来源 snapshot 不应出现在对话列表中。"""
+    from openharness.services import session_storage
+
+    monkeypatch.setattr(session_storage, "get_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_storage, "get_config_dir", lambda: tmp_path)
+
+    proj_dir = tmp_path / "myproject-aaa111"
+    proj_dir.mkdir()
+    # 用户对话 — 不带 source
+    (proj_dir / "session-aaa000000001.json").write_text(
+        '{"session_id": "aaa000000001", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "user", "message_count": 0, "created_at": 2000.0}',
+        encoding="utf-8",
+    )
+    # 定时任务产生的 snapshot — source="cron"
+    (proj_dir / "session-cron00000001.json").write_text(
+        '{"session_id": "cron00000001", "cwd": "/tmp/proj", "model": "claude", '
+        '"messages": [], "summary": "提醒我运动", "message_count": 1, "created_at": 1500.0, '
+        '"source": "cron"}',
+        encoding="utf-8",
+    )
+
+    results = session_storage.list_all_sessions()
+    sids = [r["session_id"] for r in results]
+    assert "aaa000000001" in sids, "用户 session 应该在列表中"
+    assert "cron00000001" not in sids, "source='cron' 的 snapshot 不应出现在对话列表"
+
+
+def test_save_session_snapshot_persists_source(tmp_path, monkeypatch):
+    """save_session_snapshot 应把 source 字段写入 JSON。"""
+    monkeypatch.setenv("OPENHARNESS_DATA_DIR", str(tmp_path / "data"))
+    project = tmp_path / "repo"
+    project.mkdir()
+
+    path = save_session_snapshot(
+        cwd=project,
+        model="claude-test",
+        system_prompt="system",
+        messages=[ConversationMessage(role="user", content=[TextBlock(text="ping")])],
+        usage=UsageSnapshot(input_tokens=1, output_tokens=1),
+        source="cron",
+    )
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data.get("source") == "cron"
+
+
 def test_get_member_session_prefixes_no_data(tmp_path, monkeypatch):
     """list_all_sessions 在空目录上返回空列表（不依赖 swarm_member_session_ids 机制）。"""
     from openharness.services import session_storage

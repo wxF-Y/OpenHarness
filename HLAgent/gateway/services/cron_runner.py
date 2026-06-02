@@ -61,6 +61,7 @@ async def run_agent_turn(job: dict[str, Any]) -> tuple[bool, str]:
         permission_mode=permission_mode,
         system_prompt=HLAGENT_SYSTEM_PROMPT,
         active_profile=profile,
+        source="cron",
     )
     host = create_host(config)
 

@@ -153,6 +153,7 @@ async def submit_follow_up(
         usage=bundle.engine.total_usage,
         session_id=bundle.session_id,
         tool_metadata=bundle.engine.tool_metadata,
+        source=bundle.source,
     )
 
 

@@ -70,6 +70,7 @@ class BackendHostConfig:
     include_project_memory: bool = True
     expert_role: str | None = None
     expert_role_label: str | None = None
+    source: str | None = None
 
 
 class ReactBackendHost:
@@ -116,6 +117,7 @@ class ReactBackendHost:
             include_project_memory=self._config.include_project_memory,
             expert_role=self._config.expert_role,
             expert_role_label=self._config.expert_role_label,
+            source=self._config.source,
         )
         # Inject swarm_status callback into tool_metadata so swarm tools can
         # push WS events when in_process members complete (no polling needed).
@@ -268,6 +270,7 @@ class ReactBackendHost:
                         tool_metadata=self._bundle.engine.tool_metadata,
                         expert_role=self._bundle.expert_role,
                         expert_role_label=self._bundle.expert_role_label,
+                        source=self._bundle.source,
                     )
                 except Exception as save_exc:
                     log.warning("Failed to save snapshot on interrupt: %s", save_exc)

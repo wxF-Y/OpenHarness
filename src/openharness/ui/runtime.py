@@ -141,6 +141,7 @@ class RuntimeBundle:
     autodream_context: dict[str, object] | None = None
     expert_role: str | None = None
     expert_role_label: str | None = None
+    source: str | None = None
 
     def current_settings(self):
         """Return the effective settings for this session.
@@ -340,6 +341,7 @@ async def build_runtime(
     autodream_context: dict[str, object] | None = None,
     expert_role: str | None = None,
     expert_role_label: str | None = None,
+    source: str | None = None,
 ) -> RuntimeBundle:
     """Build the shared runtime for an OpenHarness session."""
     settings_overrides: dict[str, Any] = {
@@ -457,6 +459,7 @@ async def build_runtime(
         autodream_context=autodream_context,
         expert_role=expert_role,
         expert_role_label=expert_role_label,
+        source=source,
     )
 
 
@@ -672,6 +675,7 @@ async def handle_message(
                     tool_metadata=bundle.engine.tool_metadata,
                     expert_role=bundle.expert_role,
                     expert_role_label=bundle.expert_role_label,
+                    source=bundle.source,
                 )
             if result.continue_pending:
                 settings = bundle.current_settings()
@@ -705,6 +709,7 @@ async def handle_message(
                     tool_metadata=bundle.engine.tool_metadata,
                     expert_role=bundle.expert_role,
                     expert_role_label=bundle.expert_role_label,
+                    source=bundle.source,
                 )
             sync_app_state(bundle)
             return not result.should_exit
@@ -744,6 +749,7 @@ async def handle_message(
             tool_metadata=bundle.engine.tool_metadata,
             expert_role=bundle.expert_role,
             expert_role_label=bundle.expert_role_label,
+            source=bundle.source,
         )
         sync_app_state(bundle)
         return True
@@ -757,6 +763,7 @@ async def handle_message(
         tool_metadata=bundle.engine.tool_metadata,
         expert_role=bundle.expert_role,
         expert_role_label=bundle.expert_role_label,
+        source=bundle.source,
     )
     sync_app_state(bundle)
     return True

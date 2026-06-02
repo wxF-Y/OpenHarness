@@ -79,8 +79,12 @@ def save_session_snapshot(
     expert_role: str | None = None,
     expert_role_label: str | None = None,
     parent_session_id: str | None = None,
+    source: str | None = None,
 ) -> Path:
-    """Persist a session snapshot. Saves both by ID and as latest."""
+    """Persist a session snapshot. Saves both by ID and as latest.
+
+    ``source`` 记录 snapshot 来源（如 ``"cron"``）。前端列表会过滤掉这些非用户对话。
+    """
     session_dir = get_project_session_dir(cwd)
     sid = session_id or uuid4().hex[:12]
     now = time.time()
@@ -109,6 +113,7 @@ def save_session_snapshot(
         "expert_role": expert_role,
         "expert_role_label": expert_role_label,
         "parent_session_id": parent_session_id,
+        "source": source,
     }
     # Serialize — clean any surrogate characters that break utf-8 encoding
     try:
@@ -260,6 +265,8 @@ def list_all_sessions() -> list[dict[str, Any]]:
 
     同一 workspace 下可能有多个独立 session（不同对话），全部返回；
     member session（含 parent_session_id 字段）会被过滤，只展示用户级 session。
+    被标记为非用户来源的 snapshot（如 source="cron"）也会被过滤掉——
+    它们是定时任务等无人值守流程产生的痕迹，不应出现在对话列表中。
     """
     sessions_dir = get_sessions_dir()
     results: list[dict[str, Any]] = []
@@ -273,6 +280,9 @@ def list_all_sessions() -> list[dict[str, Any]]:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 # member session 在自身 snapshot 中声明 parent_session_id，是权威标识
                 if data.get("parent_session_id"):
+                    continue
+                # 非用户来源（如 cron 定时任务）不在对话列表展示
+                if data.get("source"):
                     continue
                 results.append({
                     "session_id": data.get("session_id", ""),
