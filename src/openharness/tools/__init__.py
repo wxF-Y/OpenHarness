@@ -30,6 +30,7 @@ from openharness.tools.read_mcp_resource_tool import ReadMcpResourceTool
 from openharness.tools.team_read_mailbox_tool import TeamReadMailboxTool
 from openharness.tools.remote_trigger_tool import RemoteTriggerTool
 from openharness.tools.team_create_run_tool import TeamCreateRunTool
+from openharness.tools.team_get_current_run_tool import TeamGetCurrentRunTool
 from openharness.tools.team_spawn_member_tool import TeamSpawnMemberTool
 from openharness.tools.team_list_members_tool import TeamListMembersTool
 from openharness.tools.team_wait_tool import TeamWaitTool
@@ -98,6 +99,7 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
         SendMessageTool(),
         TeamReadMailboxTool(),
         TeamCreateRunTool(),
+        TeamGetCurrentRunTool(),
         TeamSpawnMemberTool(),
         TeamListMembersTool(),
         TeamWaitTool(),
@@ -120,6 +122,7 @@ def create_default_tool_registry(mcp_manager=None) -> ToolRegistry:
 
 LEADER_EXCLUSIVE_TOOLS: frozenset[str] = frozenset({
     "team_create_run",
+    "team_get_current_run",
     "team_spawn_member",
     "team_list_members",
     "team_wait",

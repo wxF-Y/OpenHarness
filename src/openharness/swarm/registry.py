@@ -378,10 +378,10 @@ class BackendRegistry:
 
     def _register_defaults(self) -> None:
         """Register built-in backends that are unconditionally available."""
-        from openharness.swarm.subprocess_backend import SubprocessBackend
+        # from openharness.swarm.subprocess_backend import SubprocessBackend
         from openharness.swarm.in_process import InProcessBackend
 
-        self._backends["subprocess"] = SubprocessBackend()
+        # self._backends["subprocess"] = SubprocessBackend()  # 屏蔽 subprocess backend
         # InProcessBackend uses asyncio Tasks — always available on all platforms
         self._backends["in_process"] = InProcessBackend()
 

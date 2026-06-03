@@ -17,6 +17,15 @@ class TeamShutdownMemberInput(BaseModel):
     team: str = Field(description="Team name")
     member: str = Field(description="Member name (e.g. 'creative-strategist')")
     force: bool = Field(default=False, description="Force kill instead of graceful shutdown")
+    run_id: str | None = Field(
+        default=None,
+        description=(
+            "run_id from team_create_run (format: '{team}/{goal_slug}'). "
+            "Required for graceful shutdown so the message routes to the member's "
+            "run-specific inbox under teams-tasks/, not the template team directory. "
+            "Optional when force=True."
+        ),
+    )
 
 
 class TeamShutdownMemberTool(BaseTool):
@@ -58,8 +67,19 @@ class TeamShutdownMemberTool(BaseTool):
             if not killed:
                 return ToolResult(output=f"No running task found for {agent_id}.")
         else:
-            # Graceful: send shutdown_request to member's mailbox
-            mailbox = TeammateMailbox(arguments.team, agent_id)
+            # Graceful: send shutdown_request to member's mailbox.
+            # Route to the run-specific inbox under teams-tasks/ when run_id provided,
+            # otherwise fall back to the template team mailbox.
+            if arguments.run_id:
+                try:
+                    from openharness.swarm.mailbox import get_team_task_mailbox_dir
+                    _t, _s = arguments.run_id.split("/", 1)
+                    member_inbox = get_team_task_mailbox_dir(_t, _s, agent_id)
+                    mailbox = TeammateMailbox(arguments.team, agent_id, inbox_dir=member_inbox)
+                except ValueError as exc:
+                    return ToolResult(output=f"Invalid run_id {arguments.run_id!r}: {exc}", is_error=True)
+            else:
+                mailbox = TeammateMailbox(arguments.team, agent_id)
             msg = create_shutdown_request(sender="lead", recipient=agent_id)
             try:
                 await mailbox.write(msg)

@@ -128,10 +128,63 @@ class TeamSpawnMemberTool(BaseTool):
             "When your work is finished, summarize your output clearly."
         )
 
-        session_id = uuid.uuid4().hex
+        # 强制使用 in_process backend（屏蔽 subprocess）
+        member_backend = "in_process"
         registry = get_backend_registry()
-        member_backend = (member.backend_type if member else None) or "in_process"
         executor = registry.get_executor(member_backend)
+
+        # 幂等性检查：如果 member 已经在 run 中有 session_id，检查是否需要复用
+        agent_id = f"{arguments.member}@{arguments.team}"
+        existing_session_id = None
+
+        if resolved_run_id:
+            try:
+                _t, _s = arguments.run_id.split("/", 1)
+                from openharness.config.paths import get_config_dir as _gcd
+                from openharness.swarm.team_lifecycle import TeamFile
+                run_team_file = _gcd() / "teams-tasks" / _t / _s / "team.json"
+                if run_team_file.exists():
+                    run_tf = TeamFile.load(run_team_file)
+                    run_member = run_tf.members.get(agent_id)
+                    if run_member and run_member.session_id:
+                        existing_session_id = run_member.session_id
+            except Exception as exc:
+                logger.warning("Failed to check existing session for %s: %s", agent_id, exc)
+
+        # 如果有 existing_session_id，检查是否 alive
+        if existing_session_id:
+            is_alive = executor.is_alive(existing_session_id)
+
+            if is_alive:
+                # Session 仍然 alive，使用 send_message 追加任务
+                logger.info(f"Member {agent_id} session {existing_session_id} is alive, sending message instead of spawning")
+                from openharness.swarm.types import TeammateMessage
+                message = TeammateMessage(
+                    from_agent_id="leader",
+                    to_agent_id=agent_id,
+                    message_type="user_message",
+                    payload={"text": arguments.task},
+                )
+                try:
+                    await executor.send_message(agent_id, message)
+                    return ToolResult(output=f"已向 {agent_id} 发送追加任务（session 复用）")
+                except Exception as exc:
+                    logger.error(f"Failed to send message to {agent_id}: {exc}")
+                    return ToolResult(output=f"Failed to send message: {exc}", is_error=True)
+            else:
+                # Session 已退出，从磁盘恢复对话历史后重新 spawn
+                logger.info(f"Member {agent_id} session {existing_session_id} is dead, restoring history and respawning")
+                from openharness.swarm.session_restore import load_session_snapshot
+                snapshot = load_session_snapshot(existing_session_id)
+                initial_messages = snapshot.get("messages", [])
+
+                # 准备 spawn config 时使用原 session_id 和恢复的历史
+                session_id = existing_session_id
+                logger.info(f"Restored {len(initial_messages)} messages for {agent_id}")
+        else:
+            # 首次 spawn，生成新 session_id
+            session_id = uuid.uuid4().hex
+            initial_messages = None
 
         resolved_model = (
             arguments.model
@@ -152,6 +205,7 @@ class TeamSpawnMemberTool(BaseTool):
             model=resolved_model,
             system_prompt=member_system,
             session_id=session_id,
+            initial_messages=initial_messages,  # 注入恢复的历史
             mailbox_team_path=resolved_run_id,
             on_status_change=on_status_change,  # push swarm_status WS event on completion
         )

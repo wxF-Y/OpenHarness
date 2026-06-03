@@ -240,9 +240,18 @@ async def _run_query_loop(
     from openharness.engine.query import run_query
     from openharness.engine.messages import ConversationMessage
 
-    messages: list[ConversationMessage] = [
-        ConversationMessage.from_user_text(config.prompt)
-    ]
+    # Initialize messages: use initial_messages if provided (for session restoration),
+    # otherwise start with the prompt as first user message
+    messages: list[ConversationMessage] = []
+    if config.initial_messages:
+        # Restore conversation history from snapshot
+        for msg in config.initial_messages:
+            messages.append(ConversationMessage.from_dict(msg))
+        # Append the new prompt as an additional turn
+        messages.append(ConversationMessage.from_user_text(config.prompt))
+    else:
+        # Fresh conversation
+        messages = [ConversationMessage.from_user_text(config.prompt)]
 
     # Set up streaming queue for real-time deltas (if session_id is set)
     stream_q: asyncio.Queue | None = None
@@ -502,6 +511,10 @@ class InProcessBackend:
         agent_id = f"{config.name}@{config.team}"
         task_id = f"in_process_{uuid.uuid4().hex[:12]}"
 
+        # Use explicit session_id if provided, otherwise generate new one
+        if config.session_id is None:
+            config.session_id = uuid.uuid4().hex
+
         if agent_id in self._active:
             entry = self._active[agent_id]
             if not entry.task.done():
@@ -627,6 +640,22 @@ class InProcessBackend:
         await self._cleanup_teammate(agent_id)
         logger.debug("[InProcessBackend] shut down %s", agent_id)
         return True
+
+    def is_alive(self, session_id: str) -> bool:
+        """Check if a session is still running.
+
+        Args:
+            session_id: Session ID to check (matches agent_id or internal identifier)
+
+        Returns:
+            True if session exists and task is not done, False otherwise
+        """
+        # For in_process backend, session_id is typically the agent_id
+        # Check if agent_id exists in _active and task is not done
+        for agent_id, entry in self._active.items():
+            if agent_id == session_id or entry.task_id == session_id:
+                return not entry.task.done()
+        return False
 
     # ------------------------------------------------------------------
     # Enhanced lifecycle management

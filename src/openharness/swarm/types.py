@@ -306,6 +306,9 @@ class TeammateSpawnConfig:
     session_id: str | None = None
     """Explicit session ID (generated if not provided)."""
 
+    initial_messages: list[dict] | None = None
+    """Initial conversation history to restore when spawning (for session continuity)."""
+
     subscriptions: list[str] = field(default_factory=list)
     """Event topics this teammate subscribes to."""
 
