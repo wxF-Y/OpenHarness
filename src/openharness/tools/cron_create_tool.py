@@ -21,8 +21,13 @@ class CronCreateToolInput(BaseModel):
     name: str = Field(description="Unique cron job name")
     schedule: str = Field(
         description=(
-            "Cron schedule expression (e.g. '*/5 * * * *' for every 5 minutes, "
-            "'0 9 * * 1-5' for weekdays at 9am)"
+            "Cron schedule expression. Use ONLY these simple forms so the UI can display a friendly label:\n"
+            "  - Every day at HH:MM          →  'MM HH * * *'          e.g. '0 9 * * *'\n"
+            "  - Weekdays (Mon-Fri) at HH:MM →  'MM HH * * 1-5'        e.g. '30 8 * * 1-5'\n"
+            "  - Specific weekdays at HH:MM  →  'MM HH * * D[,D]'      e.g. '0 10 * * 1,3,5'\n"
+            "  - Monthly on day N at HH:MM   →  'MM HH D * *'          e.g. '0 9 15 * *'\n"
+            "Do NOT use step intervals (*/N), hour ranges (A-B), or other complex fields. "
+            "If a request implies 'every N hours', choose a fixed daily time instead."
         ),
     )
     command: str | None = Field(default=None, description="Shell command to run when triggered")

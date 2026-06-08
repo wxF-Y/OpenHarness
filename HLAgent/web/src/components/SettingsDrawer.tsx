@@ -21,6 +21,7 @@ interface Props {
 
 export default function SettingsDrawer({ onClose }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
   const [permMode, setPermMode] = useState<string>('default')
   const [permSaved, setPermSaved] = useState(false)
@@ -28,24 +29,41 @@ export default function SettingsDrawer({ onClose }: Props) {
   const currentSessionMode = sessionStore.wsStatus === 'ready' ? sessionStore.planMode : null
 
   useEffect(() => {
+    setLoadError(false)
     fetch('/api/settings').then((r) => r.json()).then((s) => {
       setSettings(s)
       setPermMode(s.permission_mode || 'default')
-    }).catch(() => {})
+    }).catch(() => setLoadError(true))
   }, [])
 
   async function patch(updates: Partial<Settings>) {
     setSaving(true)
-    await fetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    })
-    setSaving(false)
-    setSettings((s) => s ? { ...s, ...updates } : s)
+    try {
+      await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      setSettings((s) => s ? { ...s, ...updates } : s)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  if (!settings) return null
+  if (!settings) return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ width: '320px', backgroundColor: '#181825', borderLeft: '1px solid #313244', height: '100%', overflowY: 'auto', padding: '1.5rem', color: '#cdd6f4' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+          <span style={{ fontWeight: 700, color: '#89b4fa' }}>⚙️ 设置</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#6c7086', cursor: 'pointer', fontSize: '1rem' }}>×</button>
+        </div>
+        {loadError
+          ? <div style={{ color: '#f38ba8', fontSize: '0.8125rem' }}>加载失败，请检查服务是否运行</div>
+          : <div style={{ color: '#6c7086', fontSize: '0.8125rem' }}>加载中…</div>
+        }
+      </div>
+    </div>
+  )
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }} onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -210,15 +228,18 @@ export default function SettingsDrawer({ onClose }: Props) {
               <button
                 onClick={async () => {
                   setSaving(true)
-                  await fetch('/api/settings', {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ permission_mode: permMode }),
-                  })
-                  setSaving(false)
-                  setSettings((s) => s ? { ...s, permission_mode: permMode } : s)
-                  setPermSaved(true)
-                  setTimeout(() => setPermSaved(false), 2000)
+                  try {
+                    await fetch('/api/settings', {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ permission_mode: permMode }),
+                    })
+                    setSettings((s) => s ? { ...s, permission_mode: permMode } : s)
+                    setPermSaved(true)
+                    setTimeout(() => setPermSaved(false), 2000)
+                  } finally {
+                    setSaving(false)
+                  }
                 }}
                 disabled={saving}
                 style={{ marginTop: '0.5rem', backgroundColor: permSaved ? '#a6e3a1' : '#313244', color: permSaved ? '#1e1e2e' : '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem 0.75rem', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.8125rem', width: '100%' }}

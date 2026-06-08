@@ -32,7 +32,7 @@ async def get_settings() -> dict[str, Any]:
         "vim_mode": s.vim_mode,
         "voice_mode": s.voice_mode,
         "output_style": s.output_style,
-        "theme": s.theme,
+        "theme": getattr(s, "theme", ""),
         "base_url": s.base_url or "",
         "permission_mode": s.permission.mode.value,
         "allowed_tools": s.permission.allowed_tools,
