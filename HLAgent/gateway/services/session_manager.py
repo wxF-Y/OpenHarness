@@ -17,6 +17,7 @@ class SessionEntry:
     model: str | None = None
     expert_role: str | None = None
     expert_role_label: str | None = None
+    active_profile: str | None = None
 
 
 class SessionManager:

@@ -439,6 +439,10 @@ class SetPermissionModeRequest(BaseModel):
     mode: Literal["default", "plan", "full_auto"]
 
 
+class SetProfileRequest(BaseModel):
+    active_profile: str = Field(min_length=1, max_length=64)
+
+
 @router.post("/{session_id}/permission-mode")
 async def set_permission_mode(session_id: _SESSION_ID, req: SetPermissionModeRequest) -> dict[str, Any]:
     host = session_mgr.get(session_id)
@@ -449,6 +453,68 @@ async def set_permission_mode(session_id: _SESSION_ID, req: SetPermissionModeReq
     from openharness.ui.protocol import FrontendRequest
     await host.push_request(FrontendRequest(type="submit_line", line=f"/permissions {req.mode}"))
     return {"mode": req.mode}
+
+
+@router.get("/{session_id}/profile")
+async def get_session_profile(session_id: _SESSION_ID) -> dict[str, Any]:
+    entry = session_mgr.get_entry(session_id)
+    if entry is None:
+        raise HTTPException(404, "Session not found")
+    from openharness.config.settings import load_settings
+    fallback = load_settings().active_profile
+    return {"active_profile": entry.active_profile or fallback}
+
+
+@router.patch("/{session_id}/profile")
+async def set_session_profile(session_id: _SESSION_ID, req: SetProfileRequest) -> dict[str, Any]:
+    entry = session_mgr.get_entry(session_id)
+    if entry is None:
+        raise HTTPException(404, "Session not found")
+    host = entry.host
+    if host.is_ready:
+        state = host.app_state
+        if state and getattr(state, "busy", False):
+            raise HTTPException(409, "Cannot change profile while agent is running")
+    from openharness.config.settings import load_settings
+    s = load_settings()
+    profiles = s.merged_profiles()
+    if req.active_profile not in profiles:
+        raise HTTPException(404, f"Profile '{req.active_profile}' not found")
+    entry.active_profile = req.active_profile
+    # 不写全局 settings.json（避免并发竞争 + 全局副作用）
+    # 通过 bundle.settings_overrides 注入 active_profile 覆盖，让本会话的 current_settings() 读到新值
+    if host.is_ready and host._bundle is not None:
+        host._bundle.settings_overrides["active_profile"] = req.active_profile
+        # 清掉 model 覆盖防止旧模型名污染：CLI 启动时可能写了 model 覆盖到 overrides
+        host._bundle.settings_overrides.pop("model", None)
+    api_key_warning: str | None = None
+    if host.is_ready and host._bundle is not None:
+        from openharness.ui.runtime import refresh_runtime_client
+        # 先无条件把 app_state.model 设为新 profile 的 default_model，
+        # 确保即使 refresh_runtime_client 因缺 API Key 失败，前端状态栏也能反映切换
+        try:
+            new_profile = profiles[req.active_profile]
+            target_model = (new_profile.last_model or new_profile.default_model or "").strip()
+            if target_model:
+                host._bundle.app_state.set(model=target_model)
+        except Exception as exc:
+            log.warning("Failed to pre-set app_state.model: %s", exc)
+        try:
+            refresh_runtime_client(host._bundle)
+        except (SystemExit, ValueError) as exc:
+            api_key_warning = f"已切换到 {req.active_profile}，但该 profile 缺少 API Key 配置"
+            log.warning("Profile switched but client refresh failed: %s", exc)
+        # 向 WS 推送 state_snapshot，让前端状态栏立即显示新模型名
+        try:
+            from openharness.ui.protocol import BackendEvent
+            snapshot = BackendEvent.state_snapshot(host._bundle.app_state.get())
+            await host._event_queue.put(snapshot)
+        except Exception as exc:
+            log.warning("Failed to push state_snapshot after profile switch: %s", exc)
+    result: dict[str, Any] = {"active_profile": req.active_profile}
+    if api_key_warning:
+        result["warning"] = api_key_warning
+    return result
 
 
 class AttachmentMetadata(BaseModel):

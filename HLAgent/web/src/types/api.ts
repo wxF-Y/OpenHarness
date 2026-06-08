@@ -14,3 +14,18 @@ export interface SessionSummary {
   expert_role?: string | null
   expert_role_label?: string | null
 }
+
+export interface ProfileSummary {
+  name: string
+  label: string
+  provider: string
+  model: string
+  api_format: string
+  base_url: string
+  auth_source: string
+  is_builtin: boolean
+  allowed_models: string[]
+  context_window_tokens: number | null
+  auto_compact_threshold_tokens: number | null
+  credential_slot: string | null
+}

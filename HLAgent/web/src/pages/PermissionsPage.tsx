@@ -14,12 +14,6 @@ interface PermissionSettings {
   denied_commands: string[]
 }
 
-const MODE_LABELS: Record<string, { label: string; color: string; desc: string }> = {
-  default: { label: 'Default', color: '#89b4fa', desc: '逐一确认写操作，读操作自动放行' },
-  plan: { label: 'Plan Mode', color: '#f9e2af', desc: '阻断所有写操作，仅允许只读工具' },
-  full_auto: { label: 'Full Auto', color: '#a6e3a1', desc: '所有工具自动放行，无需确认' },
-}
-
 function TagList({
   title,
   items,
@@ -133,6 +127,8 @@ export default function PermissionsPage() {
   const [settings, setSettings] = useState<PermissionSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [permMode, setPermMode] = useState<string>('default')
+  const [permModeSaved, setPermModeSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchSettings = useCallback(async () => {
@@ -147,6 +143,7 @@ export default function PermissionsPage() {
         path_rules: data.path_rules ?? [],
         denied_commands: data.denied_commands ?? [],
       })
+      setPermMode(data.permission_mode ?? 'default')
     } catch (e) {
       setError(String(e))
     }
@@ -182,6 +179,25 @@ export default function PermissionsPage() {
   const update = (patch: Partial<PermissionSettings>) =>
     setSettings(prev => prev ? { ...prev, ...patch } : prev)
 
+  const savePermMode = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permission_mode: permMode }),
+      })
+      if (!res.ok) throw new Error(`保存失败: ${res.status}`)
+      setPermModeSaved(true)
+      setTimeout(() => setPermModeSaved(false), 2000)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div style={{ height: '100%', backgroundColor: '#1e1e2e', color: '#cdd6f4', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -206,18 +222,46 @@ export default function PermissionsPage() {
             <div style={{ color: '#6c7086', fontSize: '0.875rem', textAlign: 'center', marginTop: '3rem' }}>加载中…</div>
           )}
 
+          {/* 默认权限模式 */}
+          {settings && (
+            <div style={{ background: '#181825', border: '1px solid #313244', borderRadius: '6px', padding: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ color: '#cdd6f4', fontWeight: 600, marginBottom: '0.25rem', fontSize: '0.875rem' }}>默认权限模式</div>
+              <div style={{ fontSize: '0.75rem', color: '#6c7086', marginBottom: '0.75rem' }}>
+                影响新会话启动时的初始权限；当前会话可用 /permissions 命令覆盖
+              </div>
+              {(['default', 'plan', 'full_auto'] as const).map((mode) => {
+                const labels: Record<string, string> = {
+                  default: 'Default — 逐一确认写操作（推荐）',
+                  plan: 'Plan Mode — 阻断所有写操作',
+                  full_auto: 'Full Auto — 全部自动放行',
+                }
+                return (
+                  <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="permission_mode_page"
+                      value={mode}
+                      checked={permMode === mode}
+                      onChange={() => setPermMode(mode)}
+                      style={{ accentColor: '#89b4fa' }}
+                    />
+                    <span style={{ fontSize: '0.8125rem', color: '#cdd6f4' }}>{labels[mode]}</span>
+                  </label>
+                )
+              })}
+              <button
+                onClick={savePermMode}
+                disabled={saving}
+                style={{ marginTop: '0.5rem', backgroundColor: permModeSaved ? '#a6e3a1' : '#313244', color: permModeSaved ? '#1e1e2e' : '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem 0.75rem', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.8125rem' }}
+              >
+                {permModeSaved ? '✓ 已保存' : '保存全局默认'}
+              </button>
+            </div>
+          )}
+
           {settings && (() => {
-            const mode = settings.permission_mode
-            const modeInfo = MODE_LABELS[mode] ?? MODE_LABELS.default
             return (
               <>
-                {/* 当前模式信息 */}
-                <div style={{ background: '#181825', border: `1px solid ${modeInfo.color}40`, borderRadius: '6px', padding: '0.75rem 1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ color: modeInfo.color, fontWeight: 700, fontSize: '0.8125rem' }}>{modeInfo.label}</span>
-                  <span style={{ color: '#6c7086', fontSize: '0.8rem' }}>{modeInfo.desc}</span>
-                  <span style={{ marginLeft: 'auto', color: '#45475a', fontSize: '0.75rem' }}>在 SettingsDrawer 中修改模式</span>
-                </div>
-
                 {/* 工具白名单 */}
                 <TagList
                   title="工具白名单 (allowed_tools)"

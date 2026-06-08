@@ -191,92 +191,8 @@ def normalize_anthropic_model_name(model: str) -> str:
 
 
 def default_provider_profiles() -> dict[str, ProviderProfile]:
-    """Return the built-in provider workflow catalog."""
-    return {
-        "claude-api": ProviderProfile(
-            label="Anthropic-Compatible API",
-            provider="anthropic",
-            api_format="anthropic",
-            auth_source="anthropic_api_key",
-            default_model="claude-sonnet-4-6",
-        ),
-        "claude-subscription": ProviderProfile(
-            label="Claude Subscription",
-            provider="anthropic_claude",
-            api_format="anthropic",
-            auth_source="claude_subscription",
-            default_model="claude-sonnet-4-6",
-        ),
-        "openai-compatible": ProviderProfile(
-            label="OpenAI-Compatible API",
-            provider="openai",
-            api_format="openai",
-            auth_source="openai_api_key",
-            default_model="gpt-5.4",
-        ),
-        "codex": ProviderProfile(
-            label="Codex Subscription",
-            provider="openai_codex",
-            api_format="openai",
-            auth_source="codex_subscription",
-            default_model="gpt-5.4",
-        ),
-        "copilot": ProviderProfile(
-            label="GitHub Copilot",
-            provider="copilot",
-            api_format="copilot",
-            auth_source="copilot_oauth",
-            default_model="gpt-5.4",
-        ),
-        "moonshot": ProviderProfile(
-            label="Moonshot (Kimi)",
-            provider="moonshot",
-            api_format="openai",
-            auth_source="moonshot_api_key",
-            default_model="kimi-k2.5",
-            base_url="https://api.moonshot.cn/v1",
-        ),
-        "gemini": ProviderProfile(
-            label="Google Gemini",
-            provider="gemini",
-            api_format="openai",
-            auth_source="gemini_api_key",
-            default_model="gemini-2.5-flash",
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-        ),
-        "minimax": ProviderProfile(
-            label="MiniMax",
-            provider="minimax",
-            api_format="openai",
-            auth_source="minimax_api_key",
-            default_model="MiniMax-M2.7",
-            base_url="https://api.minimax.io/v1",
-        ),
-        "nvidia": ProviderProfile(
-            label="NVIDIA NIM",
-            provider="nvidia",
-            api_format="openai",
-            auth_source="nvidia_api_key",
-            default_model="openai/gpt-oss-120b",
-            base_url="https://integrate.api.nvidia.com/v1",
-        ),
-        "qwen": ProviderProfile(
-            label="Qwen (DashScope)",
-            provider="dashscope",
-            api_format="openai",
-            auth_source="dashscope_api_key",
-            default_model="qwen-plus",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        ),
-        "modelscope": ProviderProfile(
-            label="ModelScope",
-            provider="modelscope",
-            api_format="openai",
-            auth_source="modelscope_api_key",
-            default_model="deepseek-ai/DeepSeek-V4-Flash",
-            base_url="https://api-inference.modelscope.cn/v1",
-        ),
-    }
+    """返回内置 provider 目录，当前为空——所有 profile 均由用户自行配置。"""
+    return {}
 
 
 def builtin_provider_profile_names() -> set[str]:
@@ -299,6 +215,11 @@ def display_label_for_profile(profile_name: str, profile: ProviderProfile) -> st
 def is_claude_family_provider(provider: str) -> bool:
     """Return True when the provider is a Claude/Anthropic workflow."""
     return provider in {"anthropic", "anthropic_claude"}
+
+
+def is_anthropic_format(api_format: str) -> bool:
+    """Return True when the API format uses the Anthropic SDK protocol."""
+    return api_format in {"anthropic", "anthropic_compat"}
 
 
 def display_model_setting(profile: ProviderProfile) -> str:
@@ -549,7 +470,7 @@ class Settings(BaseModel):
     auto_compact_threshold_tokens: int | None = None
     api_format: str = "anthropic"  # "anthropic", "openai", or "copilot"
     provider: str = ""
-    active_profile: str = "claude-api"
+    active_profile: str = ""
     profiles: dict[str, ProviderProfile] = Field(default_factory=default_provider_profiles)
     max_turns: int = 200
 
@@ -587,7 +508,7 @@ class Settings(BaseModel):
     image_generation: ImageGenerationConfig = Field(default_factory=ImageGenerationConfig)
 
     def merged_profiles(self) -> dict[str, ProviderProfile]:
-        """Return the saved profiles merged over the built-in catalog."""
+        """返回用户配置的 profile 列表（内置目录为空，全部由用户自行管理）。"""
         merged = default_provider_profiles()
         for name, raw_profile in self.profiles.items():
             profile = (
@@ -602,13 +523,21 @@ class Settings(BaseModel):
         return merged
 
     def resolve_profile(self, name: str | None = None) -> tuple[str, ProviderProfile]:
-        """Return the active provider profile."""
+        """返回当前活跃 profile。profiles 非空时只在已有列表中选择，绝不从平铺字段重建。"""
         profiles = self.merged_profiles()
-        profile_name = (name or self.active_profile or os.environ.get("OPENHARNESS_PROFILE") or "").strip() or "claude-api"
-        if profile_name not in profiles:
-            fallback_name, fallback = _profile_from_flat_settings(self)
-            profiles[fallback_name] = fallback
-            profile_name = fallback_name
+        profile_name = (name or self.active_profile or os.environ.get("OPENHARNESS_PROFILE") or "").strip()
+        if not profile_name or profile_name not in profiles:
+            if not profiles:
+                # profiles 为空 → 返回空占位
+                return "", ProviderProfile(
+                    label="",
+                    provider="anthropic",
+                    api_format="anthropic",
+                    auth_source="anthropic_api_key",
+                    default_model="",
+                )
+            # profiles 非空但 active_profile 无效 → 选第一个，不重建
+            profile_name = next(iter(profiles))
         return profile_name, profiles[profile_name].model_copy(deep=True)
 
     def materialize_active_profile(self) -> Settings:
@@ -634,67 +563,13 @@ class Settings(BaseModel):
         )
 
     def sync_active_profile_from_flat_fields(self) -> Settings:
-        """Fold legacy flat provider fields back into the active profile.
-
-        This preserves compatibility for callers that still construct `Settings`
-        by setting top-level `provider` / `api_format` / `base_url` / `model`
-        directly before the profile layer is used everywhere.
-        """
+        """profiles 已存在时，平铺字段不再回写到 active profile，避免旧字段污染。"""
         profile_name, profile = self.resolve_profile()
-        profile_from_env = bool(os.environ.get("OPENHARNESS_PROFILE"))
-        flat_profile_fields_match_profile = profile_from_env or (
-            (self.provider or "").strip() == profile.provider
-            and (self.api_format or "").strip() == profile.api_format
-            and self.base_url == profile.base_url
-        )
-        next_provider = profile.provider if flat_profile_fields_match_profile else (self.provider or "").strip() or profile.provider
-        next_api_format = profile.api_format if flat_profile_fields_match_profile else (self.api_format or "").strip() or profile.api_format
-        next_base_url = profile.base_url if flat_profile_fields_match_profile else (self.base_url if self.base_url is not None else profile.base_url)
-        next_context_window_tokens = (
-            self.context_window_tokens
-            if self.context_window_tokens is not None
-            else profile.context_window_tokens
-        )
-        next_auto_compact_threshold_tokens = (
-            self.auto_compact_threshold_tokens
-            if self.auto_compact_threshold_tokens is not None
-            else profile.auto_compact_threshold_tokens
-        )
-        flat_model = (self.model or "").strip()
-        resolved_profile_model = resolve_model_setting(
-            (profile.last_model or "").strip() or profile.default_model,
-            profile.provider,
-            default_model=profile.default_model,
-            permission_mode=self.permission.mode.value,
-        )
-        if flat_model and flat_model != resolved_profile_model:
-            next_model = flat_model
-        else:
-            next_model = profile.last_model
-        current_default_auth = default_auth_source_for_provider(profile.provider, profile.api_format)
-        next_auth_source = profile.auth_source
-        if not next_auth_source or next_auth_source == current_default_auth:
-            next_auth_source = default_auth_source_for_provider(next_provider, next_api_format)
-
-        updated_profile = profile.model_copy(
-            update={
-                "provider": next_provider,
-                "api_format": next_api_format,
-                "base_url": next_base_url,
-                "auth_source": next_auth_source,
-                "last_model": next_model,
-                "context_window_tokens": next_context_window_tokens,
-                "auto_compact_threshold_tokens": next_auto_compact_threshold_tokens,
-            }
-        )
-        profiles = self.merged_profiles()
-        profiles[profile_name] = updated_profile
-        return self.model_copy(
-            update={
-                "active_profile": profile_name,
-                "profiles": profiles,
-            }
-        )
+        if not profile_name:
+            # profiles 为空时直接返回，不构造任何新 profile
+            return self
+        # profile 存在 → 保持其原有字段不变，不让平铺 base_url/model/provider 污染
+        return self.model_copy(update={"active_profile": profile_name})
 
     def resolve_api_key(self) -> str:
         """Resolve API key with precedence: instance value > env var > empty.

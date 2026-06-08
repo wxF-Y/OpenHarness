@@ -1,0 +1,16 @@
+phase: archive
+preset: full
+name: model-profile-management
+created: 2026-06-08
+handoff_context: openspec/changes/model-profile-management/.comet/handoff/design-context.json
+handoff_hash: 2af2d56246f875b1557c88bf2c0ae504fef1713f141d7ebea006bd18ff0c769e
+plan: docs/superpowers/plans/2026-06-08-model-profile-management.md
+isolation: branch
+build_mode: subagent-driven-development
+verify_result: pass
+verify_mode: full
+verification_report: docs/superpowers/reports/2026-06-08-model-profile-management-verify.md
+branch_status: handled
+archived: true
+archived_at: 2026-06-08
+archive_path: openspec/changes/archive/2026-06-08-model-profile-management

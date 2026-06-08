@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ModalData, SelectOption } from '../types/protocol'
 
-export type AppView = 'chat' | 'memory' | 'skills' | 'experts' | 'cron' | 'swarm' | 'autopilot' | 'permissions'
+export type AppView = 'chat' | 'memory' | 'skills' | 'experts' | 'cron' | 'swarm' | 'autopilot' | 'permissions' | 'models'
 
 export interface SelectModalState {
   kind: 'select'

@@ -1,0 +1,32 @@
+{
+  "comet_change": "model-profile-management",
+  "phase": "design",
+  "canonical_spec": "openspec",
+  "generated": "2026-06-08",
+  "mode": "compact",
+  "sources": [
+    {
+      "path": "openspec/changes/model-profile-management/proposal.md",
+      "sha256": "61410a93cfbe02f340a2e16e9915c94cfa87277591e9db03a5017a6d1af85cb6"
+    },
+    {
+      "path": "openspec/changes/model-profile-management/design.md",
+      "sha256": "2af2d56246f875b1557c88bf2c0ae504fef1713f141d7ebea006bd18ff0c769e"
+    },
+    {
+      "path": "openspec/changes/model-profile-management/tasks.md",
+      "sha256": "db69d81b9d587e0a36e47487d19cf4961fadcae24c394e2b47bedf484aa7a216"
+    }
+  ],
+  "summary": {
+    "problem": "Session 无法选择模型，全局只支持单套配置，缺少 anthropic_compat 格式，模型配置无独立管理界面",
+    "approach": "后端新增 profiles CRUD + anthropic_compat + session profile patch；前端新增 ModelsPage + CreateSessionModal profile 下拉 + SettingsDrawer 简化 + PermissionsPage 接收权限模式",
+    "scope": "前端 6 文件变更 1 新建，后端 3 文件变更",
+    "key_constraints": [
+      "内置 profile 仅允许修改 api_key",
+      "session busy 时不允许切换 profile",
+      "anthropic_compat 必须填 base_url",
+      "CreateSessionModal 不允许新建 profile，仅选择"
+    ]
+  }
+}

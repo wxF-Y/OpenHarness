@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SessionSummary } from '../types/api'
+import type { SessionSummary, ProfileSummary } from '../types/api'
 
 interface ExpertRole {
   name: string
@@ -19,6 +19,9 @@ export default function CreateSessionModal({ onCreated, onClose, expertRole }: P
   const [creating, setCreating] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([])
+  const [selectedProfile, setSelectedProfile] = useState<string>('')
+  const [globalActiveProfile, setGlobalActiveProfile] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleCreate = useCallback(async () => {
@@ -27,6 +30,7 @@ export default function CreateSessionModal({ onCreated, onClose, expertRole }: P
     try {
       const body: Record<string, unknown> = {}
       if (cwdInput.trim()) body.cwd = cwdInput.trim()
+      if (selectedProfile) body.active_profile = selectedProfile
       if (expertRole) {
         body.role_prefix = expertRole.rolePrefix
         body.expert_role = expertRole.name
@@ -54,7 +58,7 @@ export default function CreateSessionModal({ onCreated, onClose, expertRole }: P
     } finally {
       setCreating(false)
     }
-  }, [cwdInput, expertRole, onCreated])
+  }, [cwdInput, selectedProfile, expertRole, onCreated])
 
   async function handleBrowse() {
     setBrowsing(true)
@@ -75,6 +79,16 @@ export default function CreateSessionModal({ onCreated, onClose, expertRole }: P
 
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/settings/profiles').then((r) => r.ok ? r.json() : Promise.reject()).catch(() => []),
+      fetch('/api/settings').then((r) => r.ok ? r.json() : Promise.reject()).catch(() => null),
+    ]).then(([profilesData, settingsData]: [ProfileSummary[], { active_profile?: string } | null]) => {
+      setProfiles(profilesData || [])
+      setGlobalActiveProfile(settingsData?.active_profile || '')
+    })
   }, [])
 
   useEffect(() => {
@@ -146,6 +160,35 @@ export default function CreateSessionModal({ onCreated, onClose, expertRole }: P
             </button>
           </div>
         </div>
+
+        {/* Profile 选择 */}
+        {profiles.length > 0 && (
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={{ fontSize: '0.8125rem', color: '#a6adc8', display: 'block', marginBottom: '0.4rem' }}>模型配置（可选）</label>
+            <select
+              value={selectedProfile}
+              onChange={(e) => setSelectedProfile(e.target.value)}
+              style={{
+                width: '100%', background: '#11111b', border: '1px solid #313244', borderRadius: 6,
+                color: '#cdd6f4', padding: '0.45rem 0.6rem', fontSize: '0.8125rem',
+              }}
+            >
+              {/* 多 profile 时显示"全局默认"占位（附当前指向），单 profile 时下拉只有该条 profile，避免歧义 */}
+              {profiles.length > 1 && (() => {
+                const defaultProfile = profiles.find((p) => p.name === globalActiveProfile)
+                const defaultLabel = defaultProfile
+                  ? `全局默认（当前：${defaultProfile.label}）`
+                  : '全局默认'
+                return <option value="">{defaultLabel}</option>
+              })()}
+              {profiles.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.label}{p.model ? ` (${p.model})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Help / error text */}
         <div style={{ fontSize: '0.72rem', marginBottom: '1.25rem', minHeight: '1.1rem' }}>

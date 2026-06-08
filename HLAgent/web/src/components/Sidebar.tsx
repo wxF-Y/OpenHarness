@@ -265,6 +265,7 @@ export default function Sidebar({
           <IconBtn icon="🧠" title="Memory" active={activeView === 'memory'} onClick={() => onViewChange('memory')} />
           <IconBtn icon="⚡" title="Skills" active={activeView === 'skills'} onClick={() => onViewChange('skills')} />
           <IconBtn icon="🎭" title="专家库" active={activeView === 'experts'} onClick={() => onViewChange('experts')} />
+          <IconBtn icon="🧩" title="模型配置" active={activeView === 'models'} onClick={() => onViewChange('models')} />
           <IconBtn
             icon="⚙"
             title="更多工具"
@@ -488,6 +489,7 @@ export default function Sidebar({
           <NavItem icon="⏰" label="Cron 定时任务" active={activeView === 'cron'} onClick={() => onViewChange('cron')} />
           <NavItem icon="🤝" label="Swarm 协作" active={activeView === 'swarm'} onClick={() => onViewChange('swarm')} />
           <NavItem icon="🔐" label="权限设置" active={activeView === 'permissions'} onClick={() => onViewChange('permissions')} />
+          <NavItem icon="🧩" label="模型配置" active={activeView === 'models'} onClick={() => onViewChange('models')} />
         </Section>
       </div>
 

@@ -22,6 +22,7 @@ import CronPage from '../pages/CronPage'
 import SwarmPage from '../pages/SwarmPage'
 import AutopilotPage from '../pages/AutopilotPage'
 import PermissionsPage from '../pages/PermissionsPage'
+import ModelsPage from '../pages/ModelsPage'
 import SettingsDrawer from './SettingsDrawer'
 import CreateSessionModal from './CreateSessionModal'
 
@@ -339,9 +340,10 @@ const VIEW_COMPONENTS: Record<Exclude<AppView, 'chat'>, React.ComponentType> = {
   swarm: SwarmPage,
   autopilot: AutopilotPage,
   permissions: PermissionsPage,
+  models: ModelsPage,
 }
 
-const VALID_VIEWS: AppView[] = ['chat', 'memory', 'skills', 'experts', 'cron', 'swarm', 'autopilot', 'permissions']
+const VALID_VIEWS: AppView[] = ['chat', 'memory', 'skills', 'experts', 'cron', 'swarm', 'autopilot', 'permissions', 'models']
 
 export default function AppLayout() {
   const ui = useUiStore()

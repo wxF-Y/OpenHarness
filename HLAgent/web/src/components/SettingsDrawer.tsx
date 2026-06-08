@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
+import { useUiStore } from '../stores/uiStore'
 
 interface Settings {
   fast_mode: boolean
@@ -9,9 +10,7 @@ interface Settings {
   vim_mode: boolean
   voice_mode: boolean
   output_style: string
-  model: string
-  base_url?: string
-  api_format?: string
+  active_profile: string
   permission_mode?: string
 }
 
@@ -23,28 +22,77 @@ export default function SettingsDrawer({ onClose }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [permMode, setPermMode] = useState<string>('default')
-  const [permSaved, setPermSaved] = useState(false)
+  const [profiles, setProfiles] = useState<Array<{ name: string; label: string; model: string }>>([])
+  const [profileSwitched, setProfileSwitched] = useState(false)
+  const [profileWarning, setProfileWarning] = useState<string | null>(null)
   const sessionStore = useSessionStore()
-  const currentSessionMode = sessionStore.wsStatus === 'ready' ? sessionStore.planMode : null
+  const isBusy = sessionStore.busy
+  const sessionId = sessionStore.sessionId
 
   useEffect(() => {
     setLoadError(false)
     fetch('/api/settings').then((r) => r.json()).then((s) => {
       setSettings(s)
-      setPermMode(s.permission_mode || 'default')
+      // 如果有活跃 session，用 session 的 profile 覆盖全局默认
+      if (sessionId) {
+        fetch(`/api/sessions/${sessionId}/profile`)
+          .then((r) => r.ok ? r.json() : Promise.reject())
+          .then((data: { active_profile: string }) => {
+            if (data.active_profile) {
+              setSettings((prev) => prev ? { ...prev, active_profile: data.active_profile } : prev)
+            }
+          })
+          .catch(() => {})
+      }
     }).catch(() => setLoadError(true))
+  }, [sessionId])
+
+  useEffect(() => {
+    fetch('/api/settings/profiles')
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data: Array<{ name: string; label: string; model: string }>) => setProfiles(data))
+      .catch(() => {})
   }, [])
 
   async function patch(updates: Partial<Settings>) {
     setSaving(true)
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
+      if (!res.ok) {
+        // 保存失败：不更新本地状态，下次抽屉打开会重新拉取
+        setLoadError(true)
+        return
+      }
       setSettings((s) => s ? { ...s, ...updates } : s)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function switchProfile(profileName: string) {
+    if (!sessionId || isBusy) return
+    setSaving(true)
+    setProfileWarning(null)
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active_profile: profileName }),
+      })
+      if (res.ok) {
+        setSettings((s) => s ? { ...s, active_profile: profileName } : s)
+        const data = await res.json().catch(() => ({}))
+        if (data.warning) {
+          setProfileWarning(data.warning)
+        } else {
+          setProfileSwitched(true)
+          setTimeout(() => setProfileSwitched(false), 3000)
+        }
+      }
     } finally {
       setSaving(false)
     }
@@ -156,103 +204,46 @@ export default function SettingsDrawer({ onClose }: Props) {
           </div>
 
           <div style={{ borderTop: '1px solid #313244', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {/* Model */}
+            {/* Profile 选择 */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>模型名称</label>
-              <input
-                type="text"
-                defaultValue={settings.model || ''}
-                onBlur={(e) => { if (e.target.value !== settings.model) patch({ model: e.target.value }) }}
-                placeholder="gpt-4o / mimo-v2.5-pro / claude-sonnet-4-6"
-                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem 0.6rem', color: '#cdd6f4', boxSizing: 'border-box', fontSize: '0.8125rem' }}
-              />
-            </div>
-
-            {/* Base URL */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>Base URL（第三方接口）</label>
-              <input
-                type="text"
-                defaultValue={settings.base_url || ''}
-                onBlur={(e) => { if (e.target.value !== (settings.base_url || '')) patch({ base_url: e.target.value } as never) }}
-                placeholder="留空使用默认（Anthropic/OpenAI 官方）"
-                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem 0.6rem', color: '#cdd6f4', boxSizing: 'border-box', fontSize: '0.8125rem' }}
-              />
-            </div>
-
-            {/* API Format */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>API 格式</label>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>模型配置</label>
+              {isBusy ? (
+                <div style={{ fontSize: '0.75rem', color: '#f9e2af' }}>
+                  ⚠ Agent 运行中，暂不可切换模型
+                </div>
+              ) : null}
               <select
-                value={settings.api_format || 'anthropic'}
-                onChange={(e) => patch({ api_format: e.target.value } as never)}
-                style={{ width: '100%', backgroundColor: '#11111b', border: '1px solid #313244', borderRadius: '6px', padding: '0.4rem', color: '#cdd6f4' }}
-              >
-                <option value="anthropic">Anthropic（Claude 官方）</option>
-                <option value="openai_compat">OpenAI Compatible（第三方兼容接口）</option>
-                <option value="openai">OpenAI（OpenAI 标准）</option>
-              </select>
-              <div style={{ fontSize: '0.7rem', color: '#f9e2af', marginTop: '0.2rem' }}>
-                ⚠️ 小米 Mimo / DeepSeek 等第三方 API 请选 OpenAI Compatible
-              </div>
-            </div>
-
-            {/* Permission Mode */}
-            <div style={{ borderTop: '1px solid #313244', paddingTop: '0.75rem' }}>
-              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-                默认权限模式
-              </label>
-              <div style={{ fontSize: '0.75rem', color: '#6c7086', marginBottom: '0.5rem' }}>
-                影响新会话启动时的初始权限；当前会话可用 /permissions 命令覆盖
-              </div>
-              {(['default', 'plan', 'full_auto'] as const).map((mode) => {
-                const labels: Record<string, string> = {
-                  default: 'Default — 逐一确认写操作（推荐）',
-                  plan: 'Plan Mode — 阻断所有写操作',
-                  full_auto: 'Full Auto — 全部自动放行',
-                }
-                return (
-                  <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="permission_mode"
-                      value={mode}
-                      checked={permMode === mode}
-                      onChange={() => setPermMode(mode)}
-                      style={{ accentColor: '#89b4fa' }}
-                    />
-                    <span style={{ fontSize: '0.8125rem', color: '#cdd6f4' }}>{labels[mode]}</span>
-                  </label>
-                )
-              })}
-              <button
-                onClick={async () => {
-                  setSaving(true)
-                  try {
-                    await fetch('/api/settings', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ permission_mode: permMode }),
-                    })
-                    setSettings((s) => s ? { ...s, permission_mode: permMode } : s)
-                    setPermSaved(true)
-                    setTimeout(() => setPermSaved(false), 2000)
-                  } finally {
-                    setSaving(false)
-                  }
+                value={settings.active_profile || ''}
+                onChange={(e) => switchProfile(e.target.value)}
+                disabled={isBusy || saving}
+                style={{
+                  width: '100%', backgroundColor: '#11111b', border: '1px solid #313244',
+                  borderRadius: '6px', padding: '0.4rem', color: isBusy ? '#6c7086' : '#cdd6f4',
+                  cursor: isBusy ? 'not-allowed' : 'pointer',
                 }}
-                disabled={saving}
-                style={{ marginTop: '0.5rem', backgroundColor: permSaved ? '#a6e3a1' : '#313244', color: permSaved ? '#1e1e2e' : '#cdd6f4', border: 'none', borderRadius: '6px', padding: '0.4rem 0.75rem', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '0.8125rem', width: '100%' }}
               >
-                {permSaved ? '✓ 已保存' : '保存全局默认'}
+                {profiles.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.label}{p.model ? ` · ${p.model.length > 14 ? p.model.slice(0, 14) + '…' : p.model}` : ''}
+                  </option>
+                ))}
+              </select>
+              {profileSwitched && (
+                <div style={{ fontSize: '0.72rem', color: '#a6e3a1', marginTop: '0.3rem' }}>
+                  ✓ 已切换，下条消息起生效
+                </div>
+              )}
+              {profileWarning && (
+                <div style={{ fontSize: '0.72rem', color: '#f9e2af', marginTop: '0.3rem' }}>
+                  ⚠ {profileWarning}
+                </div>
+              )}
+              <button
+                onClick={() => { onClose(); useUiStore.getState().setActiveView('models') }}
+                style={{ marginTop: '0.4rem', background: 'none', border: 'none', color: '#89b4fa', cursor: 'pointer', fontSize: '0.75rem', padding: 0, textAlign: 'left' as const }}
+              >
+                → 管理全局模型配置
               </button>
-
-              {/* Current session mode comparison */}
-              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#6c7086' }}>
-                {currentSessionMode
-                  ? `当前会话模式: ${currentSessionMode}${currentSessionMode !== permMode ? `（与全局默认 ${permMode} 不同）` : ''}`
-                  : '暂无活跃会话'}
-              </div>
             </div>
           </div>
         </div>
