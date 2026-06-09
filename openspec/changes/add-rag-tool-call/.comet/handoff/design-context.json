@@ -1,0 +1,17 @@
+{
+  "change": "add-rag-tool-call",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "c158e22848bae54bdb3b4b6fd9595115a8e1fdf724c68281dd2e01756ff28b21",
+  "files": [
+    { "path": "openspec/changes/add-rag-tool-call/proposal.md", "sha256": "a215f54e1c919c5fcdcccb565034096b44d67bcb69419f0566c6a56ddb941e78" },
+    { "path": "openspec/changes/add-rag-tool-call/design.md", "sha256": "d8707497058c314acefa5c5154f4209533b6ab2258f968515242e12c234f55b5" },
+    { "path": "openspec/changes/add-rag-tool-call/tasks.md", "sha256": "7543c0efdd9a759429c25966a154dc7660ca2c338a8189fb64a96d28beca2cdf" },
+    { "path": "openspec/changes/add-rag-tool-call/specs/rag-agent-tools/spec.md", "sha256": "8e3dd7829462a309833cdfbdcbccf2cac853ee1ac13783c641e085275af31d95" },
+    { "path": "openspec/changes/add-rag-tool-call/specs/rag-embedding-providers/spec.md", "sha256": "d0bde0fb0d33b859eebd3b3fd6212751e75aa305fcd880a48461e29272be988d" },
+    { "path": "openspec/changes/add-rag-tool-call/specs/rag-indexing/spec.md", "sha256": "450e8e35a2d30a5831f0a448c06e04169f9dbdedda7264b4dad8f5cef594a8f8" },
+    { "path": "openspec/changes/add-rag-tool-call/specs/rag-search/spec.md", "sha256": "438e75cd3773db60b274e6d572965ea05f70954f95ba66f43c497708b445dc57" }
+  ]
+}
