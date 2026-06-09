@@ -247,5 +247,54 @@ class RagStore:
             ).fetchall()
         }
 
+    def bm25_search(self, query: str, limit: int = 50) -> list[dict]:
+        """FTS5 BM25 search across content + tokens_split."""
+        safe = '"' + query.replace('"', '""') + '"'
+        rows = self.conn.execute(
+            "SELECT rowid, file, lang, kind, symbol, parent, content, "
+            "start_line, end_line, bm25(chunks) AS score "
+            "FROM chunks WHERE chunks MATCH ? "
+            "ORDER BY score LIMIT ?",
+            (safe, limit),
+        ).fetchall()
+        cols = ["rowid", "file", "lang", "kind", "symbol", "parent",
+                "content", "start_line", "end_line", "score"]
+        out = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            d["score"] = -d["score"]
+            out.append(d)
+        return out
+
+    def vector_search(self, query_vec: list[float], limit: int = 50) -> list[dict]:
+        """sqlite-vec cosine KNN. Returns rows with distance (lower = closer)."""
+        blob = _vec_to_blob(query_vec)
+        try:
+            rows = self.conn.execute(
+                "SELECT v.rowid AS rid, v.distance AS dist, "
+                "c.file, c.lang, c.kind, c.symbol, c.parent, "
+                "c.content, c.start_line, c.end_line "
+                "FROM vec_chunks v "
+                "JOIN chunks c ON c.rowid = v.rowid "
+                "WHERE v.embedding MATCH ? AND k = ? "
+                "ORDER BY v.distance",
+                (blob, limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Fallback for sqlite-vec versions that don't accept the `k` clause.
+            rows = self.conn.execute(
+                "SELECT v.rowid AS rid, v.distance AS dist, "
+                "c.file, c.lang, c.kind, c.symbol, c.parent, "
+                "c.content, c.start_line, c.end_line "
+                "FROM vec_chunks v "
+                "JOIN chunks c ON c.rowid = v.rowid "
+                "WHERE v.embedding MATCH ? "
+                "ORDER BY v.distance LIMIT ?",
+                (blob, limit),
+            ).fetchall()
+        cols = ["rowid", "distance", "file", "lang", "kind", "symbol",
+                "parent", "content", "start_line", "end_line"]
+        return [dict(zip(cols, r)) for r in rows]
+
     def close(self) -> None:
         self.conn.close()
