@@ -23,6 +23,10 @@ os.environ["OPENHARNESS_DATA_DIR"] = str(_hlagent_home / "data")
 os.environ["OPENHARNESS_LOGS_DIR"] = str(_hlagent_home / "logs")
 os.environ["OPENHARNESS_PROJECT_DIR_NAME"] = ".hlagent"
 
+# HuggingFace 镜像默认值：国内网络环境默认走 hf-mirror.com。
+# setdefault 不覆盖用户已设的值（HF 官方源 / 自定义镜像 / 翻墙环境）。
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
