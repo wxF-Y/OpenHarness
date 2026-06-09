@@ -15,6 +15,27 @@ from hlagent_sdk import AgentSessionConfig, create_host
 from openharness.services.session_storage import find_session_by_id
 from services.session_manager import SessionEntry
 
+from pathlib import Path as _Path
+from services.rag.registry import RagRegistry as _RagReg
+from services.rag.tools import SEARCH_CODEBASE_SCHEMA as _SEARCH_CODEBASE_SCHEMA
+
+_RAG_REGISTRY = _RagReg()
+
+
+def _rag_tools_for(cwd: str) -> list[dict]:
+    """Return RAG tool schemas if an index exists for this cwd, else empty list."""
+    try:
+        if not cwd:
+            return []
+        cwd_path = _Path(cwd).resolve()
+        if not cwd_path.exists():
+            return []
+        if _RAG_REGISTRY.db_path(cwd_path).exists():
+            return [_SEARCH_CODEBASE_SCHEMA]
+    except Exception:
+        pass
+    return []
+
 # session_id 格式：32-char gateway UUID 或 12-char OpenHarness 内部 ID
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{12,32}$")
 
