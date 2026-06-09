@@ -120,5 +120,132 @@ class RagStore:
             return False
         return stored == dimensions
 
+    def upsert_chunks(
+        self,
+        file: str,
+        chunks: list[dict],
+        vectors: list[list[float]],
+        *,
+        file_sha: str,
+        mtime: float,
+        provider: str,
+        model: str,
+    ) -> None:
+        """Upsert chunks for one file in a single transaction.
+
+        Crash recovery: file_meta.in_progress is set to 1 before chunk writes
+        and cleared at COMMIT. Orphans (in_progress=1) detected at startup
+        via list_in_progress_files() and reindexed.
+        """
+        import time
+        assert len(chunks) == len(vectors), "chunks/vectors length mismatch"
+
+        c = self.conn
+        c.execute("BEGIN")
+        try:
+            c.execute(
+                "INSERT INTO file_meta(file,sha,mtime,chunk_count,provider,model,dimensions,last_indexed,in_progress) "
+                "VALUES(?,?,?,?,?,?,?,?,1) "
+                "ON CONFLICT(file) DO UPDATE SET in_progress=1",
+                (file, file_sha, mtime, len(chunks), provider, model, self.dimensions, time.time()),
+            )
+            old_ids = [
+                r[0] for r in c.execute(
+                    "SELECT rowid FROM chunks WHERE file=?", (file,)
+                ).fetchall()
+            ]
+            for rid in old_ids:
+                c.execute("DELETE FROM chunks WHERE rowid=?", (rid,))
+                c.execute("DELETE FROM vec_chunks WHERE rowid=?", (rid,))
+
+            for ch, vec in zip(chunks, vectors):
+                cur = c.execute(
+                    "INSERT INTO chunks(file,lang,kind,symbol,parent,content,tokens_split,hash,start_line,end_line) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (ch["file"], ch["lang"], ch["kind"], ch.get("symbol"),
+                     ch.get("parent"), ch["content"], ch.get("tokens_split", ""),
+                     ch["hash"], ch["start_line"], ch["end_line"]),
+                )
+                rid = cur.lastrowid
+                c.execute(
+                    "INSERT INTO vec_chunks(rowid, embedding) VALUES(?, ?)",
+                    (rid, _vec_to_blob(vec)),
+                )
+
+            c.execute(
+                "UPDATE file_meta SET sha=?, mtime=?, chunk_count=?, "
+                "provider=?, model=?, dimensions=?, last_indexed=?, in_progress=0 "
+                "WHERE file=?",
+                (file_sha, mtime, len(chunks), provider, model,
+                 self.dimensions, time.time(), file),
+            )
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
+    def delete_file(self, file: str) -> None:
+        c = self.conn
+        c.execute("BEGIN")
+        try:
+            old_ids = [
+                r[0] for r in c.execute(
+                    "SELECT rowid FROM chunks WHERE file=?", (file,)
+                ).fetchall()
+            ]
+            for rid in old_ids:
+                c.execute("DELETE FROM chunks WHERE rowid=?", (rid,))
+                c.execute("DELETE FROM vec_chunks WHERE rowid=?", (rid,))
+            c.execute("DELETE FROM file_meta WHERE file=?", (file,))
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
+    def purge_all(self) -> None:
+        c = self.conn
+        c.execute("BEGIN")
+        try:
+            c.execute("DELETE FROM chunks")
+            c.execute("DELETE FROM vec_chunks")
+            c.execute("DELETE FROM file_meta")
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
+    def stats(self) -> dict:
+        c = self.conn
+        files = c.execute("SELECT COUNT(*) FROM file_meta").fetchone()[0]
+        chunks = c.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        last = c.execute("SELECT MAX(last_indexed) FROM file_meta").fetchone()[0]
+        return {
+            "files": files,
+            "chunks": chunks,
+            "dimensions": self.dimensions,
+            "last_indexed": last,
+            "db_path": str(self.db_path),
+        }
+
+    def list_in_progress_files(self) -> list[str]:
+        return [
+            r[0] for r in self.conn.execute(
+                "SELECT file FROM file_meta WHERE in_progress=1"
+            ).fetchall()
+        ]
+
+    def get_file_sha(self, file: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT sha FROM file_meta WHERE file=?", (file,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def get_chunk_hashes(self, file: str) -> set[str]:
+        return {
+            r[0] for r in self.conn.execute(
+                "SELECT hash FROM chunks WHERE file=?", (file,)
+            ).fetchall()
+        }
+
     def close(self) -> None:
         self.conn.close()
