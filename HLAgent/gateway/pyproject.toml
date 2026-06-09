@@ -11,6 +11,16 @@ dependencies = [
     "croniter>=3.0.0",
     "hlagent-sdk",
     "openharness-ai",
+    "sqlite-vec>=0.1.6",
+    "tree-sitter>=0.21",
+    "tree-sitter-language-pack>=0.3",
+    "tiktoken>=0.7",
+    "huggingface_hub>=0.24",
+    "aiosqlite>=0.20",
+    "pathspec>=0.12",
+    "cachetools>=5.3",
+    "respx>=0.21",
+    "pytest-asyncio>=0.23",
 ]
 
 [build-system]
