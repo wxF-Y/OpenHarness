@@ -40,6 +40,7 @@ from routers import (
     git,
     memory,
     onboarding,
+    rag,
     role_library,
     sessions,
     settings,
@@ -108,6 +109,7 @@ app.include_router(git.router)
 app.include_router(autopilot.router)
 app.include_router(debug.router)
 app.include_router(skills.router)
+app.include_router(rag.router)
 
 
 @app.get("/health")
