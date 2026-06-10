@@ -22,6 +22,22 @@ _EXT_MAP: dict[str, tuple[str, str]] = {
     ".py": ("code", "python"),
     ".md": ("markdown", "markdown"),
     ".mdx": ("markdown", "markdown"),
+    ".ts": ("code", "typescript"),
+    ".tsx": ("code", "tsx"),
+    ".js": ("code", "javascript"),
+    ".jsx": ("code", "javascript"),
+    ".mjs": ("code", "javascript"),
+    ".cjs": ("code", "javascript"),
+    ".go": ("code", "go"),
+    ".java": ("code", "java"),
+    ".c": ("code", "c"),
+    ".cpp": ("code", "cpp"),
+    ".cc": ("code", "cpp"),
+    ".cxx": ("code", "cpp"),
+    ".h": ("code", "cpp"),
+    ".hpp": ("code", "cpp"),
+    ".hh": ("code", "cpp"),
+    ".rs": ("code", "rust"),
 }
 
 _TEXT_EXTS = {

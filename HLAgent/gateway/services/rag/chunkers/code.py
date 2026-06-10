@@ -26,6 +26,51 @@ _NODE_KINDS: dict[str, dict[str, str]] = {
         "function_definition": "function",
         "class_definition": "class",
     },
+    "typescript": {
+        "function_declaration": "function",
+        "method_definition": "method",
+        "class_declaration": "class",
+        "interface_declaration": "interface",
+        "arrow_function": "function",
+    },
+    "tsx": {
+        "function_declaration": "function",
+        "method_definition": "method",
+        "class_declaration": "class",
+        "interface_declaration": "interface",
+        "arrow_function": "function",
+    },
+    "javascript": {
+        "function_declaration": "function",
+        "method_definition": "method",
+        "class_declaration": "class",
+        "arrow_function": "function",
+    },
+    "go": {
+        "function_declaration": "function",
+        "method_declaration": "method",
+        "type_declaration": "type",
+    },
+    "java": {
+        "method_declaration": "method",
+        "class_declaration": "class",
+        "interface_declaration": "interface",
+    },
+    "c": {
+        "function_definition": "function",
+        "struct_specifier": "struct",
+    },
+    "cpp": {
+        "function_definition": "function",
+        "class_specifier": "class",
+        "struct_specifier": "struct",
+    },
+    "rust": {
+        "function_item": "function",
+        "impl_item": "impl",
+        "struct_item": "struct",
+        "enum_item": "enum",
+    },
 }
 
 
@@ -73,7 +118,10 @@ def chunk_code(source: str, *, file: str, lang: str) -> Iterator[dict]:
     node_kinds = _NODE_KINDS.get(lang)
     if not node_kinds:
         return
-    parser = get_parser(lang)
+    try:
+        parser = get_parser(lang)
+    except Exception:
+        return
     source_bytes = source.encode("utf-8")
     try:
         tree = parser.parse(source_bytes)
@@ -134,11 +182,28 @@ def _walk(node, source_bytes: bytes, *, file: str, lang: str,
                              node_kinds=node_kinds, parent=parent)
 
 
+_NAME_NODE_KINDS = {
+    "identifier",
+    "type_identifier",
+    "field_identifier",
+    "property_identifier",
+    "scoped_identifier",
+}
+
+
 def _node_name(node, source_bytes: bytes) -> str:
-    """Extract identifier child's text — works for Python function/class defs."""
+    """Extract the name child for the chunk node, across supported langs."""
     for c in _iter_children(node):
-        if _kind(c) == "identifier":
+        if _kind(c) in _NAME_NODE_KINDS:
             return source_bytes[_start_byte(c):_end_byte(c)].decode(
                 "utf-8", errors="replace"
             )
+    # Go type_declaration / Rust impl_item / C struct_specifier wrap the name
+    # one level deeper.
+    for c in _iter_children(node):
+        for g in _iter_children(c):
+            if _kind(g) in _NAME_NODE_KINDS:
+                return source_bytes[_start_byte(g):_end_byte(g)].decode(
+                    "utf-8", errors="replace"
+                )
     return "<anon>"
