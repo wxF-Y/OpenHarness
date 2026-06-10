@@ -25,6 +25,38 @@ _REGISTRY = RagRegistry()
 _CANCEL_TOKENS: dict[str, CancelToken] = {}
 
 
+# --- Embed Profile storage (M4 minimal: JSON file) ---
+
+_PROFILES_FILE = _REGISTRY.data_root / "embed_profiles.json"
+
+
+def _load_profiles() -> list[dict]:
+    if not _PROFILES_FILE.exists():
+        return []
+    return json.loads(_PROFILES_FILE.read_text(encoding="utf-8"))
+
+
+def _save_profiles(profs: list[dict]) -> None:
+    _PROFILES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _PROFILES_FILE.write_text(json.dumps(profs, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+
+
+def _gen_profile_id_unique(provider: str, existing: list[dict]) -> str:
+    from services.rag.providers.base import gen_profile_id
+    existing_ids = {p["id"] for p in existing}
+    while True:
+        pid = gen_profile_id(provider)
+        if pid not in existing_ids:
+            return pid
+
+
+def _redact(p: dict) -> dict:
+    out = {k: v for k, v in p.items() if k != "api_key"}
+    out["has_api_key"] = bool(p.get("api_key"))
+    return out
+
+
 def _cancel_key(cwd: Path) -> str:
     return _REGISTRY.project_hash(cwd)
 
@@ -238,5 +270,117 @@ async def stream(cwd: str, request: Request) -> StreamingResponse:
                     yield ": heartbeat\n\n"
         finally:
             sess.sse.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# --- Embed Profile CRUD ---
+
+class ProfileCreateReq(BaseModel):
+    name: str
+    provider: str
+    model: str
+    dimensions: int
+    api_base: str | None = None
+    api_key: str | None = None
+
+
+@router.get("/profiles")
+async def list_profiles() -> list[dict]:
+    return [_redact(p) for p in _load_profiles()]
+
+
+@router.post("/profiles")
+async def create_profile(req: ProfileCreateReq) -> dict:
+    profs = _load_profiles()
+    pid = _gen_profile_id_unique(req.provider, profs)
+    rec = req.model_dump()
+    rec["id"] = pid
+    profs.append(rec)
+    _save_profiles(profs)
+    return _redact(rec)
+
+
+@router.patch("/profiles/{profile_id}")
+async def update_profile(profile_id: str, body: dict) -> dict:
+    profs = _load_profiles()
+    for p in profs:
+        if p["id"] == profile_id:
+            body.pop("id", None)
+            p.update(body)
+            _save_profiles(profs)
+            return _redact(p)
+    raise HTTPException(404, f"profile {profile_id} not found")
+
+
+@router.delete("/profiles/{profile_id}")
+async def delete_profile(profile_id: str) -> dict:
+    profs = _load_profiles()
+    new = [p for p in profs if p["id"] != profile_id]
+    if len(new) == len(profs):
+        raise HTTPException(404, f"profile {profile_id} not found")
+    _save_profiles(new)
+    return {"deleted": True}
+
+
+# --- Embed test + Ollama discovery ---
+
+class EmbedTestReq(BaseModel):
+    provider: str
+    model: str
+    dimensions: int
+    api_base: str | None = None
+    api_key: str | None = None
+
+
+@router.post("/embed/test")
+async def embed_test(req: EmbedTestReq) -> dict:
+    import time
+    cfg = ProviderConfig(
+        id=f"emb_{req.provider}_000000",
+        name="(test)",
+        provider=req.provider,
+        model=req.model,
+        dimensions=req.dimensions,
+        api_base=req.api_base,
+    )
+    try:
+        prov = make_provider(cfg, api_key=req.api_key)
+    except (ValueError, NotImplementedError) as exc:
+        return {"ok": False, "error": str(exc), "latency_ms": 0,
+                "dimensions": None}
+    t0 = time.time()
+    ok, msg = await prov.health_check()
+    latency_ms = int((time.time() - t0) * 1000)
+    return {
+        "ok": ok,
+        "error": None if ok else msg,
+        "latency_ms": latency_ms,
+        "dimensions": req.dimensions if ok else None,
+    }
+
+
+@router.get("/embed/ollama/models")
+async def ollama_models(base_url: str = "http://localhost:11434") -> dict:
+    from services.rag.providers.ollama_provider import OllamaProvider
+    prov = OllamaProvider(base_url=base_url, model="(probe)", dimensions=1)
+    try:
+        models = await prov.list_models()
+        return {"models": models}
+    except Exception as exc:
+        raise HTTPException(502, f"ollama at {base_url}: {exc}")
+
+
+@router.post("/embed/ollama/pull")
+async def ollama_pull(name: str, base_url: str = "http://localhost:11434"):
+    from services.rag.providers.ollama_provider import OllamaProvider
+    prov = OllamaProvider(base_url=base_url, model=name, dimensions=1)
+
+    async def gen():
+        try:
+            async for evt in prov.pull_model(name):
+                yield f"data: {json.dumps(evt)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
