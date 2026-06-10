@@ -161,6 +161,66 @@ async def search(cwd: str, req: SearchReq) -> Any:
         raise HTTPException(409, str(exc))
 
 
+@router.get("/ignore")
+async def get_ignore(cwd: str) -> dict:
+    sess = _get_or_create_session(cwd)
+    f = sess.cwd / ".ragignore"
+    content = f.read_text(encoding="utf-8") if f.exists() else ""
+    return {"content": content, "exists": f.exists()}
+
+
+@router.put("/ignore")
+async def put_ignore(cwd: str, body: dict) -> dict:
+    sess = _get_or_create_session(cwd)
+    content = body.get("content", "")
+    if not isinstance(content, str):
+        raise HTTPException(400, "content must be a string")
+    f = sess.cwd / ".ragignore"
+    f.write_text(content, encoding="utf-8")
+    return {"saved": True, "bytes": len(content.encode("utf-8"))}
+
+
+@router.post("/purge")
+async def purge(cwd: str) -> dict:
+    """Delete index DB + drop in-memory session (next call recreates)."""
+    sess = _get_or_create_session(cwd)
+    db_path = sess.store.db_path
+    if sess.watcher is not None:
+        try:
+            sess.watcher.stop()
+        except Exception:
+            pass
+    sess.store.close()
+    key = _REGISTRY.project_hash(sess.cwd)
+    _REGISTRY._sessions.pop(key, None)
+    _CANCEL_TOKENS.pop(key, None)
+    try:
+        db_path.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            sibling = db_path.with_suffix(db_path.suffix + suffix)
+            sibling.unlink(missing_ok=True)
+    except OSError as exc:
+        raise HTTPException(500, f"failed to delete: {exc}")
+    return {"purged": True}
+
+
+@router.post("/watcher/toggle")
+async def toggle_watcher(cwd: str, body: dict | None = None) -> dict:
+    sess = _get_or_create_session(cwd)
+    desired = (body or {}).get("enabled")
+    if sess.watcher is None:
+        from services.rag.watcher import Watcher
+        sess.watcher = Watcher(sess.indexer)
+    cur = sess.watcher.state["state"]
+    if desired is None:
+        desired = cur == "stopped"
+    if desired and cur == "stopped":
+        sess.watcher.start()
+    elif not desired and cur != "stopped":
+        sess.watcher.stop()
+    return {"state": sess.watcher.state["state"]}
+
+
 @router.get("/stream")
 async def stream(cwd: str, request: Request) -> StreamingResponse:
     sess = _get_or_create_session(cwd)
