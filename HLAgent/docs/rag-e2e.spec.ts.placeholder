@@ -1,0 +1,13 @@
+// PLACEHOLDER - manual e2e flow for RAG M5
+//
+// Pre-req: OPENAI_API_KEY set, gateway + web running
+// Steps:
+//   1. Navigate to /rag
+//   2. Create OpenAI profile, test connection (check), save
+//   3. Click "重建全部"
+//   4. Wait for "complete" in activity log
+//   5. Type known Python identifier in playground (e.g. "def list_files")
+//   6. Assert at least one hit in results
+//
+// Automated playwright wiring is M5+: a fully automated e2e requires real
+// OpenAI calls (cost-sensitive) and is out of scope for the build guard.
