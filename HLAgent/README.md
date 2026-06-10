@@ -86,3 +86,31 @@ npm run dev
 | `/memory` | Memory 文件管理 |
 | `/skills` | Skills 浏览 |
 | `/autopilot` | Repo Autopilot |
+
+## RAG · 检索增强生成
+
+HLAgent 集成了基于 sqlite-vec + FTS5 的本地 RAG 索引系统。
+
+### 启用步骤
+
+1. 启动 Gateway: `cd gateway && uvicorn main:app --port 8000`
+2. 启动 Web: `cd web && npm run dev`
+3. 打开 http://localhost:5173/rag
+4. 创建一个嵌入 Provider 配置（OpenAI / Ollama / OpenAI-Compatible / Local），测试连接通过后保存
+5. 点击「重建全部」触发首次索引
+6. 在 Playground 输入 query 验证
+
+### 架构
+
+```
+HLAgent/gateway/services/rag/
+├── store.py       # SQLite + sqlite-vec + FTS5
+├── chunkers/      # tree-sitter AST 切片
+├── providers/     # OpenAI / Ollama / Compat / Local
+├── indexer.py     # 主流程
+├── watcher.py     # 文件变更监听
+├── search.py      # BM25 + 向量 + RRF
+└── tools/         # Agent 工具 (search_codebase / grep_code / read_file)
+```
+
+详见 `services/rag/README.md` 与 `docs/RAG.md`。
