@@ -76,7 +76,16 @@ def iter_chunks(path: Path, *, rel_path: str) -> Iterator[dict]:
                 yield from chunk_text(source, file=rel_path, lang=lang)
             return
         if kind == "markdown":
-            yield from chunk_text(source, file=rel_path, lang=lang, kind="text")
+            from .markdown import chunk_markdown
+            yielded = False
+            try:
+                for c in chunk_markdown(source, file=rel_path, lang=lang):
+                    yielded = True
+                    yield c
+            except Exception:
+                yielded = False
+            if not yielded:
+                yield from chunk_text(source, file=rel_path, lang=lang, kind="text")
             return
     yield from chunk_text(
         source, file=rel_path,
