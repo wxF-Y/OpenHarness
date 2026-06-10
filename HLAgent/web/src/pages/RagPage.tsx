@@ -183,6 +183,22 @@ export default function RagPage() {
       <h2>RAG · 索引与检索</h2>
       <p style={{ color: '#6c7086', fontSize: 12, marginTop: -8 }}>cwd: {cwd}</p>
 
+      {!status?.active_profile && (
+        <div style={{ ...styles.card, borderColor: '#fab387' }}>
+          <h3>👋 首次使用 RAG</h3>
+          <p>请先在下方创建一个嵌入 Provider 配置。推荐流程：</p>
+          <ol>
+            <li>选择 Provider 类型（OpenAI / Ollama / OpenAI-Compatible / Local）</li>
+            <li>填入 API Key（OpenAI / 兼容服务）或 base URL（Ollama）</li>
+            <li>点击「测试连接」验证</li>
+            <li>测试通过后点击「保存」</li>
+          </ol>
+          <p style={{ color: '#a6adc8', fontSize: 12 }}>
+            保存后可使用「重建全部」按钮触发首次索引；之后开启文件监听即可自动增量。
+          </p>
+        </div>
+      )}
+
       <RagProfileManager />
 
       <div style={styles.card}>
