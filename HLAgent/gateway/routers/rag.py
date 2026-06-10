@@ -384,3 +384,32 @@ async def ollama_pull(name: str, base_url: str = "http://localhost:11434"):
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.post("/embed/download")
+async def embed_download(req: dict) -> dict:
+    """Trigger HF model download (M5 stub).
+
+    Returns guidance for manual download via ``huggingface-cli`` when
+    ``huggingface_hub`` is installed. The full streaming download path is
+    deferred — large models + network sensitivity place it outside the
+    M5 scope. The UI surfaces the returned ``message`` to the user.
+    """
+    model = req.get("model")
+    if not model:
+        raise HTTPException(400, "model is required")
+    try:
+        import huggingface_hub  # noqa: F401
+    except ImportError:
+        raise HTTPException(
+            409,
+            "huggingface_hub not installed. "
+            "Install: pip install hlagent-gateway[embed-local]",
+        )
+    return {
+        "ok": False,
+        "message": (
+            "Manual download required. Run: "
+            f"huggingface-cli download {model} --local-dir <cache-dir>"
+        ),
+    }

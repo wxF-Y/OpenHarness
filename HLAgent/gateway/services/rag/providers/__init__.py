@@ -36,6 +36,15 @@ def make_provider(cfg: ProviderConfig, *, api_key: str | None = None) -> EmbedPr
             model=cfg.model,
             dimensions=cfg.dimensions,
         )
+    if cfg.provider == "local":
+        from .local_provider import LocalProvider
+        extras = cfg.extras or {}
+        return LocalProvider(
+            model=cfg.model,
+            dimensions=cfg.dimensions,
+            device=extras.get("device", "auto"),
+            cache_dir=extras.get("cache_dir"),
+        )
     raise NotImplementedError(f"provider {cfg.provider!r} added in later milestone")
 
 

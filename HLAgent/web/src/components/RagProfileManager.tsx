@@ -35,7 +35,7 @@ const styles = {
 
 type FormState = {
   name: string
-  provider: 'openai' | 'ollama' | 'openai-compatible'
+  provider: 'openai' | 'ollama' | 'openai-compatible' | 'local'
   model: string
   dimensions: number
   api_base: string
@@ -144,9 +144,11 @@ export function RagProfileManager() {
             provider: e.target.value as FormState['provider'],
             model: e.target.value === 'openai' ? 'text-embedding-3-small'
               : e.target.value === 'ollama' ? 'nomic-embed-text'
+              : e.target.value === 'local' ? 'BAAI/bge-small-en-v1.5'
               : 'BAAI/bge-m3',
             dimensions: e.target.value === 'openai' ? 1536
               : e.target.value === 'ollama' ? 768
+              : e.target.value === 'local' ? 384
               : 1024,
             api_base: e.target.value === 'ollama' ? 'http://localhost:11434' : '',
           })}
@@ -154,6 +156,7 @@ export function RagProfileManager() {
           <option value="openai">OpenAI</option>
           <option value="ollama">Ollama</option>
           <option value="openai-compatible">OpenAI-Compatible</option>
+          <option value="local">Local (sentence-transformers)</option>
         </select>
       </div>
 
@@ -210,7 +213,7 @@ export function RagProfileManager() {
         />
       </div>
 
-      {form.provider !== 'ollama' && (
+      {form.provider !== 'ollama' && form.provider !== 'local' && (
         <div style={styles.row}>
           <label>API Key</label>
           <input
@@ -219,6 +222,21 @@ export function RagProfileManager() {
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
           />
+        </div>
+      )}
+
+      {form.provider === 'local' && (
+        <div style={{ ...styles.row, marginTop: 12, color: '#fab387' }}>
+          <span style={{ gridColumn: 'span 2' }}>
+            ⚠ Local provider 需要安装 sentence-transformers + torch (~1.5GB):
+            <code style={{
+              display: 'block', padding: 8, marginTop: 4,
+              background: '#181825', borderRadius: 4,
+            }}>
+              pip install hlagent-gateway[embed-local]
+            </code>
+            首次使用时模型将自动从 HF 镜像下载 (~1.2GB)。
+          </span>
         </div>
       )}
 
