@@ -87,15 +87,15 @@
 - [x] 9.3 `POST /api/rag/cancel`：取消进行中的 job
 - [x] 9.4 `GET /api/rag/status`：返回 stats + watcher 状态 + 最近活动 + 今日费用
 - [x] 9.5 `POST /api/rag/search`：playground 调用，参数 `{query, top_k?}`
-- [ ] 9.6 `GET /api/rag/ignore` / `PUT /api/rag/ignore`：读写 `.ragignore` 文件
+- [x] 9.6 `GET /api/rag/ignore` / `PUT /api/rag/ignore`：读写 `.ragignore` 文件
 - [ ] 9.7 `POST /api/rag/embed/test`：临时构造 provider 跑 health_check + 1 次嵌入；返回 `{ok, latency_ms, dimensions, error?}`
 - [ ] 9.8 `POST /api/rag/embed/download`：触发 huggingface_hub.snapshot_download；磁盘预检 < 2× → 507；进度推 SSE
 - [ ] 9.9 `GET /api/rag/embed/ollama/models`：代理 Ollama `/api/tags`
 - [ ] 9.10 `POST /api/rag/embed/ollama/pull`：代理 Ollama `/api/pull`，流式进度
 - [ ] 9.11 `GET /api/rag/profiles` / `POST` / `PATCH` / `DELETE`：embed_profiles CRUD（id 自动生成、display name 可改）
-- [ ] 9.12 `POST /api/rag/watcher/toggle`：开关 watcher
+- [x] 9.12 `POST /api/rag/watcher/toggle`：开关 watcher
 - [x] 9.13 `GET /api/rag/stream`：统一 SSE 进度通道
-- [ ] 9.14 `POST /api/rag/purge`：清空索引（删 DB 文件 + 内存状态）
+- [x] 9.14 `POST /api/rag/purge`：清空索引（删 DB 文件 + 内存状态）
 
 ## 10. Web UI: /rag 页面
 
@@ -104,7 +104,7 @@
 - [x] 10.3 状态卡片组件：显示 chunks/files/size/last_indexed/today_cost
 - [x] 10.4 操作按钮组件：[手动重建] [手动增量] [取消]；watcher 切换 toggle；预算配置（日额度 + 超额行为）
 - [x] 10.5 进度条组件：根据 SSE 事件实时更新；显示当前 stage/file/速度
-- [ ] 10.6 最近活动日志组件：环形 buffer，最新在上
+- [x] 10.6 最近活动日志组件：环形 buffer，最新在上
 - [ ] 10.7 Embed Profile 管理组件：列表 + 新建对话框 + 编辑 + 删除 + 设为 active
 - [ ] 10.8 Provider 动态表单：按 provider 类型渲染不同字段（OpenAI / Ollama / Local / Compat）；ID 只读显示
 - [ ] 10.9 [测试连接] 按钮：调 `/api/rag/embed/test`，未通过禁用保存
@@ -112,7 +112,7 @@
 - [ ] 10.11 Ollama 专属 UI：模型下拉自动发现 + 未装显示 [拉取]
 - [ ] 10.12 HF 镜像切换组件（mirror / 官方 / 自定义）+ [测试连通]
 - [ ] 10.13 维度变更确认对话框：切 provider 时 dim 不一致弹出
-- [ ] 10.14 .ragignore 编辑器：Monaco 简易模式 + 保存
+- [x] 10.14 .ragignore 编辑器：Monaco 简易模式 + 保存
 - [x] 10.15 Playground 区块：输入框 + [搜索] + 结果列表（可展开 content / 跳转源文件）
 
 ## 11. Onboarding & 默认引导
