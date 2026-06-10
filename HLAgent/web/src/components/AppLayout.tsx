@@ -23,6 +23,7 @@ import SwarmPage from '../pages/SwarmPage'
 import AutopilotPage from '../pages/AutopilotPage'
 import PermissionsPage from '../pages/PermissionsPage'
 import ModelsPage from '../pages/ModelsPage'
+import RagPage from '../pages/RagPage'
 import SettingsDrawer from './SettingsDrawer'
 import CreateSessionModal from './CreateSessionModal'
 
@@ -341,9 +342,10 @@ const VIEW_COMPONENTS: Record<Exclude<AppView, 'chat'>, React.ComponentType> = {
   autopilot: AutopilotPage,
   permissions: PermissionsPage,
   models: ModelsPage,
+  rag: RagPage,
 }
 
-const VALID_VIEWS: AppView[] = ['chat', 'memory', 'skills', 'experts', 'cron', 'swarm', 'autopilot', 'permissions', 'models']
+const VALID_VIEWS: AppView[] = ['chat', 'memory', 'skills', 'experts', 'cron', 'swarm', 'autopilot', 'permissions', 'models', 'rag']
 
 export default function AppLayout() {
   const ui = useUiStore()

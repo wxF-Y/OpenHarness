@@ -490,6 +490,7 @@ export default function Sidebar({
           <NavItem icon="🤝" label="Swarm 协作" active={activeView === 'swarm'} onClick={() => onViewChange('swarm')} />
           <NavItem icon="🔐" label="权限设置" active={activeView === 'permissions'} onClick={() => onViewChange('permissions')} />
           <NavItem icon="🧩" label="模型配置" active={activeView === 'models'} onClick={() => onViewChange('models')} />
+          <NavItem icon="📚" label="RAG 索引" active={activeView === 'rag'} onClick={() => onViewChange('rag')} />
         </Section>
       </div>
 

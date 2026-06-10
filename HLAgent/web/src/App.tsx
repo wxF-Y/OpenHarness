@@ -31,6 +31,7 @@ export default function App() {
               <Route path="/swarm" element={<Navigate to="/?view=swarm" replace />} />
               <Route path="/experts" element={<Navigate to="/?view=experts" replace />} />
               <Route path="/autopilot" element={<Navigate to="/?view=autopilot" replace />} />
+              <Route path="/rag" element={<Navigate to="/?view=rag" replace />} />
               <Route path="/permissions-settings" element={<Navigate to="/?view=permissions" replace />} />
             </Routes>
           </OnboardingGuard>
