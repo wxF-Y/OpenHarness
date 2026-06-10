@@ -59,6 +59,7 @@ class Watcher:
         self._log({"stage": "watcher_started"})
         if self._loop is not None:
             self._flush_task = self._loop.create_task(self._flush_loop())
+            self._health_task = self._loop.create_task(self.health_check_loop())
 
     def stop(self) -> None:
         if self._observer:
@@ -68,6 +69,9 @@ class Watcher:
         if self._flush_task:
             self._flush_task.cancel()
             self._flush_task = None
+        if self._health_task:
+            self._health_task.cancel()
+            self._health_task = None
         self._state = "stopped"
         self._log({"stage": "watcher_stopped"})
 
@@ -115,6 +119,38 @@ class Watcher:
                 continue
             async with self._lock:
                 await self._flush_once()
+
+    async def health_check_loop(self) -> None:
+        """Every 5min, check provider health. 3 consecutive fails -> pause."""
+        consecutive_fails = 0
+        while True:
+            await asyncio.sleep(_HEALTH_CHECK_INTERVAL_S)
+            if self._state == "stopped":
+                return
+            ok, msg = await self.indexer.provider.health_check()
+            if ok:
+                consecutive_fails = 0
+                if self._state == "paused" and self._pause_reason.startswith("provider"):
+                    self.resume()
+            else:
+                consecutive_fails += 1
+                self._log({"stage": "health_fail", "msg": msg,
+                           "consecutive": consecutive_fails})
+                if consecutive_fails >= 3 and self._state == "running":
+                    self.pause(f"provider unavailable: {msg}")
+
+    def pause_for_manual(self) -> None:
+        """Pause watcher while a manual rebuild is running."""
+        if self._state == "running":
+            self.pause("manual rebuild in progress")
+            self._was_running_before_manual = True
+        else:
+            self._was_running_before_manual = False
+
+    def resume_after_manual(self) -> None:
+        if self._was_running_before_manual:
+            self.resume()
+        self._was_running_before_manual = False
 
     async def _flush_once(self) -> None:
         now = time.time()

@@ -12,6 +12,7 @@ from .store import RagStore
 
 if TYPE_CHECKING:
     from .search import Searcher
+    from .watcher import Watcher
 
 
 class RagSession:
@@ -24,6 +25,7 @@ class RagSession:
         self.sse = SseBroadcaster()
         self.indexer = Indexer(store=store, provider=provider,
                                 budget=budget, cwd=cwd)
+        self.watcher: "Watcher | None" = None
         # lazy import to avoid circular dependency during T14 (before T15 lands)
         from .search import Searcher  # noqa: WPS433
         self.searcher = Searcher(store=store, provider=provider)

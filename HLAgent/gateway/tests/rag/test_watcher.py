@@ -82,3 +82,22 @@ async def test_modify_triggers_update(setup):
     ).fetchone()
     assert rows[0] >= 1
     w.stop()
+
+
+def test_pause_for_manual_remembers_state(setup):
+    w, _ = setup
+    w.start()
+    assert w.state["state"] == "running"
+    w.pause_for_manual()
+    assert w.state["state"] == "paused"
+    w.resume_after_manual()
+    assert w.state["state"] == "running"
+    w.stop()
+
+
+def test_pause_for_manual_no_op_when_stopped(setup):
+    w, _ = setup
+    assert w.state["state"] == "stopped"
+    w.pause_for_manual()
+    w.resume_after_manual()
+    assert w.state["state"] == "stopped"

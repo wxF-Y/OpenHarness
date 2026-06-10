@@ -101,12 +101,16 @@ async def rebuild(cwd: str) -> dict:
     _CANCEL_TOKENS[key] = token
 
     async def run():
+        if sess.watcher:
+            sess.watcher.pause_for_manual()
         try:
             await sess.indexer.rebuild(on_event=sess.emit, cancel=token)
         except Exception as exc:
             await sess.emit({"stage": "error", "error": str(exc)})
         finally:
             _CANCEL_TOKENS.pop(key, None)
+            if sess.watcher:
+                sess.watcher.resume_after_manual()
 
     asyncio.create_task(run())
     return {"started": True}
@@ -121,6 +125,8 @@ async def update(cwd: str) -> dict:
     _CANCEL_TOKENS[key] = token
 
     async def run():
+        if sess.watcher:
+            sess.watcher.pause_for_manual()
         try:
             await sess.indexer.update(paths, on_event=sess.emit,
                                       cancel=token, source="manual")
@@ -128,6 +134,8 @@ async def update(cwd: str) -> dict:
             await sess.emit({"stage": "error", "error": str(exc)})
         finally:
             _CANCEL_TOKENS.pop(key, None)
+            if sess.watcher:
+                sess.watcher.resume_after_manual()
 
     asyncio.create_task(run())
     return {"started": True, "files": len(paths)}
