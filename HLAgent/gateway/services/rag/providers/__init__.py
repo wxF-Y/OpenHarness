@@ -6,6 +6,7 @@ import hashlib
 from cachetools import TTLCache
 
 from .base import EmbedProvider, ProviderConfig, Vector
+from .compat_provider import CompatProvider
 from .ollama_provider import OllamaProvider
 from .openai_provider import OpenAIProvider
 
@@ -23,6 +24,15 @@ def make_provider(cfg: ProviderConfig, *, api_key: str | None = None) -> EmbedPr
     if cfg.provider == "ollama":
         return OllamaProvider(
             base_url=cfg.api_base or "http://localhost:11434",
+            model=cfg.model,
+            dimensions=cfg.dimensions,
+        )
+    if cfg.provider == "openai-compatible":
+        if not api_key:
+            raise ValueError("api_key required for openai-compatible provider")
+        return CompatProvider(
+            api_key=api_key,
+            api_base=cfg.api_base or "",
             model=cfg.model,
             dimensions=cfg.dimensions,
         )
