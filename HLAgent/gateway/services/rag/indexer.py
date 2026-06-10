@@ -2,7 +2,6 @@
 
 M1 simplifications:
   - No watcher integration (M3)
-  - No .gitignore / .ragignore filtering (M3)
   - Single asyncio task per call; no shared global queue yet (M3 adds Worker)
 
 Emits progress events via the `on_event` async callback.
@@ -16,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Awaitable, Callable
 
+import pathspec
 import tiktoken
 
 from .budget import Budget
@@ -84,8 +84,28 @@ class Indexer:
                 self.store.delete_file(rel)
                 await on_event({"stage": "deleted", "file": rel})
 
+    def _load_ignore_specs(self) -> tuple[pathspec.PathSpec | None,
+                                          pathspec.PathSpec | None]:
+        """Read .gitignore + .ragignore from cwd; either may be missing."""
+        gi_spec: pathspec.PathSpec | None = None
+        ri_spec: pathspec.PathSpec | None = None
+        gi = self.cwd / ".gitignore"
+        ri = self.cwd / ".ragignore"
+        if gi.exists():
+            with gi.open("r", encoding="utf-8") as f:
+                gi_spec = pathspec.PathSpec.from_lines("gitwildmatch", f)
+        if ri.exists():
+            with ri.open("r", encoding="utf-8") as f:
+                ri_spec = pathspec.PathSpec.from_lines("gitwildmatch", f)
+        return gi_spec, ri_spec
+
     def _candidate_files(self):
-        """Walk cwd, yield indexable files. M1: no .gitignore/.ragignore."""
+        """Walk cwd, yield indexable files honoring .gitignore + .ragignore.
+
+        A file is excluded if either spec matches it. .ragignore can
+        therefore tighten the filter beyond .gitignore.
+        """
+        gi_spec, ri_spec = self._load_ignore_specs()
         for root, dirs, files in os.walk(self.cwd):
             dirs[:] = [d for d in dirs if d not in {
                 "node_modules", ".git", "__pycache__", ".venv",
@@ -93,8 +113,16 @@ class Indexer:
             }]
             for fname in files:
                 p = Path(root) / fname
-                if is_indexable(p):
-                    yield p
+                rel = str(p.relative_to(self.cwd)).replace(os.sep, "/")
+                gi_blocked = gi_spec.match_file(rel) if gi_spec else False
+                ri_blocked = ri_spec.match_file(rel) if ri_spec else False
+                if gi_blocked and not ri_blocked:
+                    continue
+                if ri_blocked:
+                    continue
+                if not is_indexable(p):
+                    continue
+                yield p
 
     async def _index_paths(
         self,
