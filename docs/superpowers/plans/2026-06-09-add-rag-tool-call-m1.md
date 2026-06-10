@@ -85,8 +85,8 @@ base-ref: 9608cff1781490252122353162ad7abb072f5e33
 
 ```toml
     "sqlite-vec>=0.1.6",
-    "tree-sitter>=0.21,<0.22",
-    "tree-sitter-languages>=1.10,<2",
+    "tree-sitter>=0.21",
+    "tree-sitter-language-pack>=0.3",
     "tiktoken>=0.7",
     "huggingface_hub>=0.24",
     "aiosqlite>=0.20",
@@ -273,10 +273,12 @@ from __future__ import annotations
 
 import re
 
-# 拆词位置：
-#   - 下划线 / 连字符 / 空白
-#   - 小写到大写过渡（aB → a B）
-#   - 多个大写到大写+小写（HT + TPS → HT TPS 不正确；HTTPSConn → HTTPS Conn）
+# 拆词位置（实施时发现 plan 原 regex 与测试用例 user2FAToken 矛盾，已切两遍式）：
+#   ① 第一遍：按 [_\-\s0-9]+ 切（数字也作分隔，确保 user2FAToken 切出 FAToken）
+#   ② 第二遍：对每个段应用驼峰规则
+#       - 小写到大写过渡（aB → a B）
+#       - 多个大写到大写+小写（HTTPSConn → HTTPS Conn）
+# 都保留原 token，便于精确匹配仍高分。
 _SPLIT_RE = re.compile(
     r"[_\-\s]+"
     r"|(?<=[a-z0-9])(?=[A-Z])"
@@ -1202,7 +1204,7 @@ import hashlib
 from typing import Iterator
 
 import tiktoken
-from tree_sitter_languages import get_parser
+from tree_sitter_language_pack import get_parser
 
 from .text import chunk_text
 from .util import split_code_tokens

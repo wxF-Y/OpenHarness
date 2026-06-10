@@ -242,9 +242,14 @@ v1 写死 `schema_version=1`；新增列等小变更走 migration；维度/provi
 
 **决策**：硬截断到 `max_batch_tokens * 0.9`，在截断点后追加 `\n\n[TRUNCATED: original X tokens]` 标记。日志记 warning，不挂任务。
 
-### TD-11. tree-sitter 语法版本锁定
+### TD-11. tree-sitter 语法包选择
 
-**决策**：依赖 `tree-sitter-languages>=1.10` —— 它打包了 30+ 语言的预编译 grammar，免去用户装 C 编译器。版本锁在 `pyproject.toml` 上界（如 `<2`），避免 minor 升级带来 API 破坏。
+**决策**：依赖 `tree-sitter-language-pack>=0.3`（社区维护，活跃发版，提供 cp310-cp314 预编译 wheel）替代已不再维护的 `tree-sitter-languages`。API 保持兼容：`from tree_sitter_language_pack import get_parser`，使用方式与原包一致。
+
+**理由**：
+- `tree-sitter-languages` 1.10.x 自 2024-02 起未发版，作者声明不支持源码安装；Python 3.13/3.14 没有 wheel
+- `tree-sitter-language-pack` 是同一群核心贡献者维护的 fork，覆盖 30+ 语言
+- 单包内置全部语言，避免每加一种语言改一次 pyproject
 
 不引入 `tree-sitter` 主包之外的单语言绑定包，因为 Windows wheel 不齐全。
 
