@@ -62,3 +62,42 @@ export async function search(cwd: string, query: string, topK = 8): Promise<Sear
 export function streamUrl(cwd: string): string {
   return `${base}/api/rag/stream?cwd=${encodeURIComponent(cwd)}`
 }
+
+export async function getIgnore(cwd: string): Promise<{ content: string; exists: boolean }> {
+  const r = await fetch(`${base}/api/rag/ignore?cwd=${encodeURIComponent(cwd)}`)
+  if (!r.ok) throw new Error(`get ignore ${r.status}`)
+  return r.json() as Promise<{ content: string; exists: boolean }>
+}
+
+export async function putIgnore(cwd: string, content: string): Promise<void> {
+  const r = await fetch(`${base}/api/rag/ignore?cwd=${encodeURIComponent(cwd)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!r.ok) throw new Error(`put ignore ${r.status}`)
+}
+
+export async function purge(cwd: string): Promise<void> {
+  const r = await fetch(`${base}/api/rag/purge?cwd=${encodeURIComponent(cwd)}`, {
+    method: 'POST',
+  })
+  if (!r.ok) throw new Error(`purge ${r.status}`)
+}
+
+export async function toggleWatcher(cwd: string, enabled: boolean): Promise<{ state: string }> {
+  const r = await fetch(`${base}/api/rag/watcher/toggle?cwd=${encodeURIComponent(cwd)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!r.ok) throw new Error(`watcher toggle ${r.status}`)
+  return r.json() as Promise<{ state: string }>
+}
+
+export async function cancel(cwd: string): Promise<void> {
+  const r = await fetch(`${base}/api/rag/cancel?cwd=${encodeURIComponent(cwd)}`, {
+    method: 'POST',
+  })
+  if (!r.ok) throw new Error(`cancel ${r.status}`)
+}
