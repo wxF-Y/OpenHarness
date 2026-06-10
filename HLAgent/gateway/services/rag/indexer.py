@@ -154,10 +154,15 @@ class Indexer:
                 "file": rel,
                 "cost_estimate": cost,
                 "today_total": self.budget.today_total_usd(),
+                "action": self.budget.over_budget_action,
             })
             if self.budget.over_budget_action == "hard_stop":
                 raise RuntimeError("Daily embed budget exceeded")
-            return
+            if self.budget.over_budget_action == "pause":
+                await on_event({"stage": "watcher_pause_request",
+                                "reason": "budget exceeded"})
+                return
+            # warn: proceed with embedding
 
         texts = [c["content"] for c in chunks]
         vectors = await self.provider.embed(texts)

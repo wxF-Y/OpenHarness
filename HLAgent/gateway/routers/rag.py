@@ -17,10 +17,16 @@ from services.rag.providers.base import ProviderConfig
 from services.rag.registry import RagRegistry
 from services.rag.session import RagSession
 from services.rag.store import RagStore
+from services.rag.worker import CancelToken
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
 
 _REGISTRY = RagRegistry()
+_CANCEL_TOKENS: dict[str, CancelToken] = {}
+
+
+def _cancel_key(cwd: Path) -> str:
+    return _REGISTRY.project_hash(cwd)
 
 
 def _get_active_profile() -> dict | None:
@@ -90,12 +96,17 @@ async def status(cwd: str) -> dict:
 @router.post("/rebuild")
 async def rebuild(cwd: str) -> dict:
     sess = _get_or_create_session(cwd)
+    key = _cancel_key(sess.cwd)
+    token = CancelToken()
+    _CANCEL_TOKENS[key] = token
 
     async def run():
         try:
-            await sess.indexer.rebuild(on_event=sess.emit)
+            await sess.indexer.rebuild(on_event=sess.emit, cancel=token)
         except Exception as exc:
             await sess.emit({"stage": "error", "error": str(exc)})
+        finally:
+            _CANCEL_TOKENS.pop(key, None)
 
     asyncio.create_task(run())
     return {"started": True}
@@ -105,15 +116,32 @@ async def rebuild(cwd: str) -> dict:
 async def update(cwd: str) -> dict:
     sess = _get_or_create_session(cwd)
     paths = list(sess.indexer._candidate_files())
+    key = _cancel_key(sess.cwd)
+    token = CancelToken()
+    _CANCEL_TOKENS[key] = token
 
     async def run():
         try:
-            await sess.indexer.update(paths, on_event=sess.emit, source="manual")
+            await sess.indexer.update(paths, on_event=sess.emit,
+                                      cancel=token, source="manual")
         except Exception as exc:
             await sess.emit({"stage": "error", "error": str(exc)})
+        finally:
+            _CANCEL_TOKENS.pop(key, None)
 
     asyncio.create_task(run())
     return {"started": True, "files": len(paths)}
+
+
+@router.post("/cancel")
+async def cancel(cwd: str) -> dict:
+    sess = _get_or_create_session(cwd)
+    key = _cancel_key(sess.cwd)
+    token = _CANCEL_TOKENS.get(key)
+    if token:
+        token.cancel()
+        return {"cancelled": True}
+    return {"cancelled": False, "reason": "no active job"}
 
 
 @router.post("/search")
