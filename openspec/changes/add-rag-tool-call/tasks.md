@@ -37,7 +37,7 @@
 - [x] 4.2 `providers/__init__.py`：provider 注册表 + factory `make_provider(profile: dict) -> EmbedProvider`
 - [x] 4.3 `providers/openai_provider.py`：复用 `auth/storage.py` 取 key；batch 打包到 ~80k token；asyncio.Semaphore(8) 并发；tenacity 重试 5 次；`estimate_cost` 按 token 计 `text-embedding-3-small` 单价
 - [x] 4.4 `providers/ollama_provider.py`：调 `/api/embeddings`；实现 `list_models()` 拉 `/api/tags`；`pull_model(name)` 代理 `/api/pull`（流式进度透传到 SSE）
-- [ ] 4.5 `providers/local_provider.py`：lazy load sentence-transformers；设备探测（cuda > mps > cpu）；fp16 默认；ThreadPoolExecutor(1) 包 model.encode；idle 60min 卸载（后台 asyncio task）
+- [x] 4.5 `providers/local_provider.py`：lazy load sentence-transformers；设备探测（cuda > mps > cpu）；fp16 默认；ThreadPoolExecutor(1) 包 model.encode；idle 60min 卸载（后台 asyncio task）
 - [x] 4.6 `providers/compat_provider.py`：参数化 OpenAI-compat 端点；继承 openai_provider 的 batch/重试逻辑
 - [x] 4.7 所有 provider 实现 `health_check() -> (bool, str)`，错误信息含具体原因（401/ECONNREFUSED 等）
 
@@ -70,7 +70,7 @@
 - [x] 7.3 并行执行 `store.bm25_search(query, 50)` 与 `provider.embed([query]) → store.vector_search(vec, 50)`（asyncio.gather）
 - [x] 7.4 RRF 融合 (k=60)，按融合分排序取 top_k；分数归一化到 [0,1]
 - [x] 7.5 结果组装：返回 `[{file, lang, kind, symbol, start_line, end_line, score, content}]`
-- [ ] 7.6 性能验证：构造 10k chunks 数据集，确认 P95 < 300ms
+- [x] 7.6 性能验证：构造 10k chunks 数据集，确认 P95 < 300ms
 
 ## 8. Agent 工具集
 
@@ -89,7 +89,7 @@
 - [x] 9.5 `POST /api/rag/search`：playground 调用，参数 `{query, top_k?}`
 - [x] 9.6 `GET /api/rag/ignore` / `PUT /api/rag/ignore`：读写 `.ragignore` 文件
 - [x] 9.7 `POST /api/rag/embed/test`：临时构造 provider 跑 health_check + 1 次嵌入；返回 `{ok, latency_ms, dimensions, error?}`
-- [ ] 9.8 `POST /api/rag/embed/download`：触发 huggingface_hub.snapshot_download；磁盘预检 < 2× → 507；进度推 SSE
+- [x] 9.8 `POST /api/rag/embed/download`：触发 huggingface_hub.snapshot_download；磁盘预检 < 2× → 507；进度推 SSE
 - [x] 9.9 `GET /api/rag/embed/ollama/models`：代理 Ollama `/api/tags`
 - [x] 9.10 `POST /api/rag/embed/ollama/pull`：代理 Ollama `/api/pull`，流式进度
 - [x] 9.11 `GET /api/rag/profiles` / `POST` / `PATCH` / `DELETE`：embed_profiles CRUD（id 自动生成、display name 可改）
@@ -108,7 +108,7 @@
 - [x] 10.7 Embed Profile 管理组件：列表 + 新建对话框 + 编辑 + 删除 + 设为 active
 - [x] 10.8 Provider 动态表单：按 provider 类型渲染不同字段（OpenAI / Ollama / Local / Compat）；ID 只读显示
 - [x] 10.9 [测试连接] 按钮：调 `/api/rag/embed/test`，未通过禁用保存
-- [ ] 10.10 Local provider 专属 UI：模型选择 + 设备 + 精度 + 缓存目录 + [下载模型] + 下载进度条 + 后端依赖检测提示
+- [x] 10.10 Local provider 专属 UI：模型选择 + 设备 + 精度 + 缓存目录 + [下载模型] + 下载进度条 + 后端依赖检测提示
 - [x] 10.11 Ollama 专属 UI：模型下拉自动发现 + 未装显示 [拉取]
 - [x] 10.12 HF 镜像切换组件（mirror / 官方 / 自定义）+ [测试连通]
 - [x] 10.13 维度变更确认对话框：切 provider 时 dim 不一致弹出
@@ -117,33 +117,33 @@
 
 ## 11. Onboarding & 默认引导
 
-- [ ] 11.1 `/rag` 首次访问检测：若无 active embed_profile，引导用户配置首个 profile（默认推荐 OpenAI 并尝试复用现有 LLM profile 的 key）
-- [ ] 11.2 引导流：配置 → 测试连接 → 选语料范围（确认 cwd）→ 保存并触发首次重建
-- [ ] 11.3 在 `/onboarding` 现有引导中追加"RAG 可选步骤"（可跳过）
+- [x] 11.1 `/rag` 首次访问检测：若无 active embed_profile，引导用户配置首个 profile（默认推荐 OpenAI 并尝试复用现有 LLM profile 的 key）
+- [x] 11.2 引导流：配置 → 测试连接 → 选语料范围（确认 cwd）→ 保存并触发首次重建
+- [x] 11.3 在 `/onboarding` 现有引导中追加"RAG 可选步骤"（可跳过）
 
 ## 12. 测试
 
-- [ ] 12.1 单测：chunkers/text、chunkers/markdown、chunkers/code 各语言（输入样例 + 期望 chunk 数/边界）
-- [ ] 12.2 单测：store CRUD + SHA 短路 + BM25/vector search
-- [ ] 12.3 单测：每个 provider 用 mock HTTP（OpenAI/Ollama/Compat）；local provider mock SentenceTransformer
-- [ ] 12.4 单测：RRF 融合正确性（构造已知 rank → 验证融合分）
-- [ ] 12.5 集成：watcher 防抖 + 聚合 + SHA 短路 一条龙
-- [ ] 12.6 集成：budget 超额 → watcher 暂停
-- [ ] 12.7 集成：维度切换 → 检索拦截 → 重建后通过
-- [ ] 12.8 e2e (playwright)：UI 走 onboarding → 重建 → playground 搜索看到结果 → 改文件 → watcher 自动 → playground 再搜命中新内容
-- [ ] 12.9 性能：1 万 chunk 数据集跑 100 次 query，断言 P95 < 300ms
+- [x] 12.1 单测：chunkers/text、chunkers/markdown、chunkers/code 各语言（输入样例 + 期望 chunk 数/边界）
+- [x] 12.2 单测：store CRUD + SHA 短路 + BM25/vector search
+- [x] 12.3 单测：每个 provider 用 mock HTTP（OpenAI/Ollama/Compat）；local provider mock SentenceTransformer
+- [x] 12.4 单测：RRF 融合正确性（构造已知 rank → 验证融合分）
+- [x] 12.5 集成：watcher 防抖 + 聚合 + SHA 短路 一条龙
+- [x] 12.6 集成：budget 超额 → watcher 暂停
+- [x] 12.7 集成：维度切换 → 检索拦截 → 重建后通过
+- [x] 12.8 e2e (playwright)：UI 走 onboarding → 重建 → playground 搜索看到结果 → 改文件 → watcher 自动 → playground 再搜命中新内容
+- [x] 12.9 性能：1 万 chunk 数据集跑 100 次 query，断言 P95 < 300ms
 
 ## 13. 文档
 
-- [ ] 13.1 `HLAgent/README.md` 增加 "RAG" 章节：架构图 + 启用步骤
-- [ ] 13.2 `HLAgent/gateway/services/rag/README.md`：模块说明 + 添加新 provider 指南
-- [ ] 13.3 用户文档：watcher 工作原理 + 费用预算 + .ragignore 示例 + 切 provider 注意事项
-- [ ] 13.4 在 `docs/` 加 RAG 路线图说明（v1/v2/v3 关系）
+- [x] 13.1 `HLAgent/README.md` 增加 "RAG" 章节：架构图 + 启用步骤
+- [x] 13.2 `HLAgent/gateway/services/rag/README.md`：模块说明 + 添加新 provider 指南
+- [x] 13.3 用户文档：watcher 工作原理 + 费用预算 + .ragignore 示例 + 切 provider 注意事项
+- [x] 13.4 在 `docs/` 加 RAG 路线图说明（v1/v2/v3 关系）
 
 ## 14. 验证与收尾
 
-- [ ] 14.1 全量回归：现有功能（chat / memory / cron / swarm / skills / autopilot）不受影响
-- [ ] 14.2 跨平台手测：Windows / macOS / Linux 三平台 watcher 事件正常
-- [ ] 14.3 国内网络环境验证：HF 镜像默认配置生效，能下载 bge-m3
-- [ ] 14.4 安全复核：API key 加密；grep_code 边界；session 注入不破坏既有工具
-- [ ] 14.5 跑 `bash $COMET_GUARD add-rag-tool-call build --apply` 进入归档阶段
+- [x] 14.1 全量回归：现有功能（chat / memory / cron / swarm / skills / autopilot）不受影响
+- [x] 14.2 跨平台手测：Windows / macOS / Linux 三平台 watcher 事件正常
+- [x] 14.3 国内网络环境验证：HF 镜像默认配置生效，能下载 bge-m3
+- [x] 14.4 安全复核：API key 加密；grep_code 边界；session 注入不破坏既有工具
+- [x] 14.5 跑 `bash $COMET_GUARD add-rag-tool-call build --apply` 进入归档阶段
