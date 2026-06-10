@@ -17,7 +17,11 @@ from services.session_manager import SessionEntry
 
 from pathlib import Path as _Path
 from services.rag.registry import RagRegistry as _RagReg
-from services.rag.tools import SEARCH_CODEBASE_SCHEMA as _SEARCH_CODEBASE_SCHEMA
+from services.rag.tools import (
+    GREP_CODE_SCHEMA as _GREP_CODE_SCHEMA,
+    READ_FILE_SCHEMA as _READ_FILE_SCHEMA,
+    SEARCH_CODEBASE_SCHEMA as _SEARCH_CODEBASE_SCHEMA,
+)
 
 _RAG_REGISTRY = _RagReg()
 
@@ -31,7 +35,7 @@ def _rag_tools_for(cwd: str) -> list[dict]:
         if not cwd_path.exists():
             return []
         if _RAG_REGISTRY.db_path(cwd_path).exists():
-            return [_SEARCH_CODEBASE_SCHEMA]
+            return [_SEARCH_CODEBASE_SCHEMA, _GREP_CODE_SCHEMA, _READ_FILE_SCHEMA]
     except Exception:
         pass
     return []
