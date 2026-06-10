@@ -101,3 +101,55 @@ export async function cancel(cwd: string): Promise<void> {
   })
   if (!r.ok) throw new Error(`cancel ${r.status}`)
 }
+
+export interface EmbedProfile {
+  id: string
+  name: string
+  provider: string
+  model: string
+  dimensions: number
+  api_base: string | null
+  has_api_key: boolean
+}
+
+export async function listProfiles(): Promise<EmbedProfile[]> {
+  const r = await fetch(`${base}/api/rag/profiles`)
+  if (!r.ok) throw new Error(`list profiles ${r.status}`)
+  return r.json() as Promise<EmbedProfile[]>
+}
+
+export async function createProfile(p: {
+  name: string; provider: string; model: string; dimensions: number;
+  api_base?: string | null; api_key?: string | null
+}): Promise<EmbedProfile> {
+  const r = await fetch(`${base}/api/rag/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p),
+  })
+  if (!r.ok) throw new Error(`create profile ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<EmbedProfile>
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  const r = await fetch(`${base}/api/rag/profiles/${id}`, { method: 'DELETE' })
+  if (!r.ok) throw new Error(`delete profile ${r.status}`)
+}
+
+export async function testEmbed(p: {
+  provider: string; model: string; dimensions: number;
+  api_base?: string | null; api_key?: string | null
+}): Promise<{ ok: boolean; error: string | null; latency_ms: number; dimensions: number | null }> {
+  const r = await fetch(`${base}/api/rag/embed/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p),
+  })
+  return r.json() as Promise<{ ok: boolean; error: string | null; latency_ms: number; dimensions: number | null }>
+}
+
+export async function listOllamaModels(baseUrl = 'http://localhost:11434'): Promise<Array<{ name: string }>> {
+  const r = await fetch(`${base}/api/rag/embed/ollama/models?base_url=${encodeURIComponent(baseUrl)}`)
+  if (!r.ok) return []
+  return ((await r.json()) as { models: Array<{ name: string }> }).models
+}

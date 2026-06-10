@@ -5,6 +5,7 @@ import {
   getIgnore, putIgnore, purge, toggleWatcher, cancel,
 } from '../utils/ragApi'
 import type { RagStatus, SearchHit } from '../utils/ragApi'
+import { RagProfileManager } from '../components/RagProfileManager'
 
 const styles = {
   container: { padding: '1.5rem', color: '#cdd6f4' as const, overflow: 'auto' as const, flex: 1 },
@@ -181,6 +182,8 @@ export default function RagPage() {
     <div style={styles.container}>
       <h2>RAG · 索引与检索</h2>
       <p style={{ color: '#6c7086', fontSize: 12, marginTop: -8 }}>cwd: {cwd}</p>
+
+      <RagProfileManager />
 
       <div style={styles.card}>
         <h3>状态</h3>
