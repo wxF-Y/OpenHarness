@@ -2,6 +2,7 @@
 change: add-rag-tool-call
 design-doc: docs/superpowers/specs/2026-06-09-add-rag-tool-call-design.md
 base-ref: 9608cff1781490252122353162ad7abb072f5e33
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 # Add RAG Tool-Call · M1 Walking Skeleton Implementation Plan
@@ -20,6 +21,7 @@ base-ref: 9608cff1781490252122353162ad7abb072f5e33
 
 **Validation against OpenSpec specs:** 需求与验收以 `openspec/changes/add-rag-tool-call/specs/` 为准（4 个 capability spec）。本计划任务覆盖的 spec 需求：rag-indexing 全部除 watcher / 全语料；rag-search 全部；rag-embedding-providers 仅 OpenAI + Profile ID + Query 缓存；rag-agent-tools 仅 `search_codebase`。
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## File Structure
@@ -67,6 +69,7 @@ base-ref: 9608cff1781490252122353162ad7abb072f5e33
 - `HLAgent/gateway/tests/rag/` — 新增测试目录（若不存在则创建）
 - 每个核心模块对应 `test_<module>.py`
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 1: 依赖安装 + 目录骨架
@@ -135,6 +138,7 @@ git add HLAgent/gateway/pyproject.toml HLAgent/gateway/services/rag HLAgent/gate
 git commit -m "feat(rag): add dependencies and module skeleton for M1"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 2: 注入 HF_ENDPOINT 默认值
@@ -214,6 +218,7 @@ git add HLAgent/gateway/main.py HLAgent/gateway/tests/rag/test_hf_env.py
 git commit -m "feat(rag): default HF_ENDPOINT to hf-mirror.com"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 3: chunkers/util.py — 代码 tokens 拆分
@@ -321,6 +326,7 @@ git add HLAgent/gateway/services/rag/chunkers/util.py HLAgent/gateway/tests/rag/
 git commit -m "feat(rag): add code-aware identifier tokenizer for FTS5"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 4: store.py — Schema 与连接
@@ -512,6 +518,7 @@ git add HLAgent/gateway/services/rag/store.py HLAgent/gateway/tests/rag/test_sto
 git commit -m "feat(rag): RagStore schema (sqlite-vec + FTS5 + file_meta + ledger)"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 5: store.py — upsert / delete / purge / stats
@@ -785,6 +792,7 @@ git add HLAgent/gateway/services/rag/store.py HLAgent/gateway/tests/rag/test_sto
 git commit -m "feat(rag): RagStore CRUD with per-batch transactions and crash recovery"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 6: store.py — BM25 与 vector 检索
@@ -933,6 +941,7 @@ git add HLAgent/gateway/services/rag/store.py HLAgent/gateway/tests/rag/test_sto
 git commit -m "feat(rag): RagStore BM25 + vector search"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 7: chunkers/text.py — 递归字符切分
@@ -1112,6 +1121,7 @@ git add HLAgent/gateway/services/rag/chunkers/text.py HLAgent/gateway/tests/rag/
 git commit -m "feat(rag): recursive character text chunker with tiktoken budget"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 8: chunkers/code.py — Python via tree-sitter
@@ -1300,6 +1310,7 @@ git add HLAgent/gateway/services/rag/chunkers/code.py HLAgent/gateway/tests/rag/
 git commit -m "feat(rag): tree-sitter Python AST chunker"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 9: chunkers dispatcher + 过滤
@@ -1479,6 +1490,7 @@ git add HLAgent/gateway/services/rag/chunkers/__init__.py HLAgent/gateway/tests/
 git commit -m "feat(rag): chunker dispatcher with binary/large file filtering"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 10: providers/base.py — Protocol 与 Profile ID
@@ -1592,6 +1604,7 @@ git add HLAgent/gateway/services/rag/providers/base.py HLAgent/gateway/tests/rag
 git commit -m "feat(rag): EmbedProvider Protocol + ProviderConfig + profile_id generator"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 11: providers/openai_provider.py + LRU Query Cache
@@ -1931,6 +1944,7 @@ git add HLAgent/gateway/services/rag/providers HLAgent/gateway/tests/rag/test_op
 git commit -m "feat(rag): OpenAI embed provider + LRU cache wrapper"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 12: budget.py — 日费用账本
@@ -2063,6 +2077,7 @@ git add HLAgent/gateway/services/rag/budget.py HLAgent/gateway/tests/rag/test_bu
 git commit -m "feat(rag): daily cost ledger and budget enforcement"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 13: indexer.py + worker.py + CancelToken
@@ -2428,6 +2443,7 @@ git add HLAgent/gateway/services/rag/indexer.py HLAgent/gateway/services/rag/wor
 git commit -m "feat(rag): Indexer with rebuild/update + per-batch transaction + cancel"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 14: sse.py + session.py + registry.py
@@ -2606,6 +2622,7 @@ git add HLAgent/gateway/services/rag/sse.py HLAgent/gateway/services/rag/session
 git commit -m "feat(rag): SseBroadcaster + RagSession + cwd-keyed RagRegistry"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 15: search.py — 混合检索 + RRF
@@ -2778,6 +2795,7 @@ git add HLAgent/gateway/services/rag/search.py HLAgent/gateway/tests/rag/test_se
 git commit -m "feat(rag): hybrid retrieval with RRF fusion + dim mismatch guard"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 16: tools/search_codebase.py + tool schema
@@ -2944,6 +2962,7 @@ git add HLAgent/gateway/services/rag/tools HLAgent/gateway/tests/rag/test_tool_s
 git commit -m "feat(rag): search_codebase Agent tool with structured error envelope"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 17: routers/rag.py — REST endpoints + SSE
@@ -3223,6 +3242,7 @@ git add HLAgent/gateway/routers/rag.py HLAgent/gateway/main.py HLAgent/gateway/t
 git commit -m "feat(rag): REST endpoints (rebuild/update/status/search/stream) + SSE"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 18: session 工具注入
@@ -3317,6 +3337,7 @@ git add HLAgent/gateway/routers/ws.py HLAgent/gateway/tests/rag/test_session_inj
 git commit -m "feat(rag): inject search_codebase tool into ws sessions when index present"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 19: Web — /rag 路由 + 页面骨架
@@ -3598,6 +3619,7 @@ git add HLAgent/web/src/utils/ragApi.ts HLAgent/web/src/pages/RagPage.tsx HLAgen
 git commit -m "feat(rag-ui): /rag page with status / rebuild / SSE progress / playground"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 20: E2E — 全链路冒烟
@@ -3664,6 +3686,7 @@ git add HLAgent/web/e2e/rag.spec.ts
 git commit -m "test(rag): e2e walking-skeleton — rebuild + search hits known symbol"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Task 21: M1 收尾 — 勾选 master tasks + 整库测试
@@ -3717,6 +3740,7 @@ git add openspec/changes/add-rag-tool-call/tasks.md
 git commit -m "chore(rag): mark M1 tasks complete in OpenSpec tasks.md"
 ```
 
+archived-with: 2026-06-10-add-rag-tool-call
 ---
 
 ## Self-Review Checklist

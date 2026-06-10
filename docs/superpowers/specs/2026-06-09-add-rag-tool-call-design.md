@@ -2,6 +2,8 @@
 comet_change: add-rag-tool-call
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-10-add-rag-tool-call
+status: final
 ---
 
 # add-rag-tool-call · Technical Design
