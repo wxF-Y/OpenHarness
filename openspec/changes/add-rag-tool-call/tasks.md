@@ -21,14 +21,14 @@
 ## 3. 切片层（chunkers/）
 
 - [x] 3.1 实现 `chunkers/text.py`：递归字符切分 (`\n\n` → `\n` → `. ` → ` ` → 字符)，目标 512 token，overlap 64；使用 tiktoken 计 token
-- [ ] 3.2 实现 `chunkers/markdown.py`：解析 ATX heading 切节；小节合并；大节按段落二切并加面包屑；代码块/表格视为原子
+- [x] 3.2 实现 `chunkers/markdown.py`：解析 ATX heading 切节；小节合并；大节按段落二切并加面包屑；代码块/表格视为原子
 - [x] 3.3 实现 `chunkers/code.py` 基础：tree-sitter 解析、节点遍历框架、上下文前缀生成（`# file:`、`# class X:`）
 - [x] 3.4 chunkers/code.py 支持 Python（function_definition / class_definition / 方法）
-- [ ] 3.5 chunkers/code.py 支持 TypeScript / JavaScript（function_declaration / arrow_function 绑定到 const / class / interface）
-- [ ] 3.6 chunkers/code.py 支持 Go（function_declaration / method_declaration / type_declaration）
-- [ ] 3.7 chunkers/code.py 支持 Java（method_declaration / class_declaration / interface_declaration）
-- [ ] 3.8 chunkers/code.py 支持 C/C++（function_definition / class_specifier / struct_specifier）
-- [ ] 3.9 chunkers/code.py 支持 Rust（function_item / impl_item / struct_item / enum_item）
+- [x] 3.5 chunkers/code.py 支持 TypeScript / JavaScript（function_declaration / arrow_function 绑定到 const / class / interface）
+- [x] 3.6 chunkers/code.py 支持 Go（function_declaration / method_declaration / type_declaration）
+- [x] 3.7 chunkers/code.py 支持 Java（method_declaration / class_declaration / interface_declaration）
+- [x] 3.8 chunkers/code.py 支持 C/C++（function_definition / class_specifier / struct_specifier）
+- [x] 3.9 chunkers/code.py 支持 Rust（function_item / impl_item / struct_item / enum_item）
 - [x] 3.10 chunker dispatch：按扩展名选 chunker；二进制/超大/忽略文件返回空；任意 chunker 异常 fallback 到 text chunker
 
 ## 4. 嵌入 Provider 抽象与实现
@@ -75,8 +75,8 @@
 ## 8. Agent 工具集
 
 - [x] 8.1 `rag/tools/search_codebase.py`：包装 `Searcher.hybrid_search`；返回 JSON 字符串；错误情况返回 `{error, code, hint}` 结构
-- [ ] 8.2 `rag/tools/grep_code.py`：调用 ripgrep（`subprocess` 或 `python-ripgrep`）；强制 cwd 边界；过滤规则复用 indexer；上限 500
-- [ ] 8.3 `rag/tools/read_file.py`：复用现有 `routers/fs.py` 的安全边界；支持 start/end 行
+- [x] 8.2 `rag/tools/grep_code.py`：调用 ripgrep（`subprocess` 或 `python-ripgrep`）；强制 cwd 边界；过滤规则复用 indexer；上限 500
+- [x] 8.3 `rag/tools/read_file.py`：复用现有 `routers/fs.py` 的安全边界；支持 start/end 行
 - [x] 8.4 工具 schema 定义（OpenAI tool-use 格式 + Anthropic 兼容）
 - [x] 8.5 在 `services/session_manager.py` 或 `routers/sessions.py` / `ws.py` 创建 session 时检查 RAG config，按 `enabled` 注入三工具
 
