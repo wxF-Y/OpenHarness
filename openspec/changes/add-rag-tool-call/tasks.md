@@ -50,18 +50,18 @@
 - [x] 5.5 `Indexer.rebuild()`：先 `store.purge_all()`，再对全部 candidate 文件调 update 等价逻辑
 - [x] 5.6 `Indexer.delete_files(paths)`：调 `store.delete_file` 清理
 - [x] 5.7 单一 asyncio worker 串行消化（indexer 与 watcher 共用），防 DB 竞态；提供 cancel token 支持取消
-- [ ] 5.8 budget 超额时 emit 事件并按 `over_budget_action` 处理（pause: watcher 停 / warn: 仅记录 / hard_stop: 中止当前 job）
+- [x] 5.8 budget 超额时 emit 事件并按 `over_budget_action` 处理（pause: watcher 停 / warn: 仅记录 / hard_stop: 中止当前 job）
 
 ## 6. 文件监听（watcher.py）
 
-- [ ] 6.1 `watcher.Watcher`：watchdog `Observer` + 自定义 `FileSystemEventHandler`；启动监听 cwd
-- [ ] 6.2 事件过滤：`.gitignore` + `.ragignore` + 二进制 + 超大；过滤后入队
-- [ ] 6.3 per-file 防抖：以 path 为 key，500ms 内重复事件合并为最后一个
-- [ ] 6.4 聚合 flush：每 3s 收集队列内文件 → 调 `indexer.update(paths)` 或 `delete_files(paths)`
-- [ ] 6.5 启停控制：`start()` / `stop()` / `pause(reason)` / `resume()`；状态可查
-- [ ] 6.6 健康守护：每 5 分钟 provider `health_check`，连续 3 次失败 → `pause("provider unavailable: <err>")`
-- [ ] 6.7 与 manual rebuild 互斥：rebuild 开始时 watcher 入队暂停，结束后恢复
-- [ ] 6.8 状态 + 最近活动日志：环形 buffer（最近 50 条），供 UI 拉取
+- [x] 6.1 `watcher.Watcher`：watchdog `Observer` + 自定义 `FileSystemEventHandler`；启动监听 cwd
+- [x] 6.2 事件过滤：`.gitignore` + `.ragignore` + 二进制 + 超大；过滤后入队
+- [x] 6.3 per-file 防抖：以 path 为 key，500ms 内重复事件合并为最后一个
+- [x] 6.4 聚合 flush：每 3s 收集队列内文件 → 调 `indexer.update(paths)` 或 `delete_files(paths)`
+- [x] 6.5 启停控制：`start()` / `stop()` / `pause(reason)` / `resume()`；状态可查
+- [x] 6.6 健康守护：每 5 分钟 provider `health_check`，连续 3 次失败 → `pause("provider unavailable: <err>")`
+- [x] 6.7 与 manual rebuild 互斥：rebuild 开始时 watcher 入队暂停，结束后恢复
+- [x] 6.8 状态 + 最近活动日志：环形 buffer（最近 50 条），供 UI 拉取
 
 ## 7. 检索（search.py）
 
@@ -84,7 +84,7 @@
 
 - [x] 9.1 `POST /api/rag/rebuild`：触发全量重建（异步），返回 job_id
 - [x] 9.2 `POST /api/rag/update`：触发增量（异步），返回 job_id
-- [ ] 9.3 `POST /api/rag/cancel`：取消进行中的 job
+- [x] 9.3 `POST /api/rag/cancel`：取消进行中的 job
 - [x] 9.4 `GET /api/rag/status`：返回 stats + watcher 状态 + 最近活动 + 今日费用
 - [x] 9.5 `POST /api/rag/search`：playground 调用，参数 `{query, top_k?}`
 - [ ] 9.6 `GET /api/rag/ignore` / `PUT /api/rag/ignore`：读写 `.ragignore` 文件
