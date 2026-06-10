@@ -5,7 +5,7 @@
 - [x] 1.3 创建 `HLAgent/gateway/services/rag/` 目录骨架（含 `__init__.py`、`indexer.py`、`watcher.py`、`search.py`、`store.py`、`budget.py`、`chunkers/`、`providers/`）
 - [x] 1.4 创建 `HLAgent/gateway/routers/rag.py` 占位（仅 router 注册，不写端点）
 - [x] 1.5 在 `HLAgent/gateway/main.py` include `rag.py` router；启动早期执行 `os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")`
-- [ ] 1.6 全局 settings 增加 `embed_profiles: list[dict]` 与 `hf_endpoint: str | None` 字段（修改 `routers/settings.py` 与底层数据模型）
+- [x] 1.6 全局 settings 增加 `embed_profiles: list[dict]` 与 `hf_endpoint: str | None` 字段（修改 `routers/settings.py` 与底层数据模型）
 
 ## 2. 数据层（store.py + schema）
 
@@ -36,9 +36,9 @@
 - [x] 4.1 `providers/base.py`：`EmbedProvider` Protocol；`ProviderConfig` Pydantic 模型；profile_id 生成器 `gen_profile_id(provider)`
 - [x] 4.2 `providers/__init__.py`：provider 注册表 + factory `make_provider(profile: dict) -> EmbedProvider`
 - [x] 4.3 `providers/openai_provider.py`：复用 `auth/storage.py` 取 key；batch 打包到 ~80k token；asyncio.Semaphore(8) 并发；tenacity 重试 5 次；`estimate_cost` 按 token 计 `text-embedding-3-small` 单价
-- [ ] 4.4 `providers/ollama_provider.py`：调 `/api/embeddings`；实现 `list_models()` 拉 `/api/tags`；`pull_model(name)` 代理 `/api/pull`（流式进度透传到 SSE）
+- [x] 4.4 `providers/ollama_provider.py`：调 `/api/embeddings`；实现 `list_models()` 拉 `/api/tags`；`pull_model(name)` 代理 `/api/pull`（流式进度透传到 SSE）
 - [ ] 4.5 `providers/local_provider.py`：lazy load sentence-transformers；设备探测（cuda > mps > cpu）；fp16 默认；ThreadPoolExecutor(1) 包 model.encode；idle 60min 卸载（后台 asyncio task）
-- [ ] 4.6 `providers/compat_provider.py`：参数化 OpenAI-compat 端点；继承 openai_provider 的 batch/重试逻辑
+- [x] 4.6 `providers/compat_provider.py`：参数化 OpenAI-compat 端点；继承 openai_provider 的 batch/重试逻辑
 - [x] 4.7 所有 provider 实现 `health_check() -> (bool, str)`，错误信息含具体原因（401/ECONNREFUSED 等）
 
 ## 5. 索引主流程（indexer.py + budget.py）
@@ -88,11 +88,11 @@
 - [x] 9.4 `GET /api/rag/status`：返回 stats + watcher 状态 + 最近活动 + 今日费用
 - [x] 9.5 `POST /api/rag/search`：playground 调用，参数 `{query, top_k?}`
 - [x] 9.6 `GET /api/rag/ignore` / `PUT /api/rag/ignore`：读写 `.ragignore` 文件
-- [ ] 9.7 `POST /api/rag/embed/test`：临时构造 provider 跑 health_check + 1 次嵌入；返回 `{ok, latency_ms, dimensions, error?}`
+- [x] 9.7 `POST /api/rag/embed/test`：临时构造 provider 跑 health_check + 1 次嵌入；返回 `{ok, latency_ms, dimensions, error?}`
 - [ ] 9.8 `POST /api/rag/embed/download`：触发 huggingface_hub.snapshot_download；磁盘预检 < 2× → 507；进度推 SSE
-- [ ] 9.9 `GET /api/rag/embed/ollama/models`：代理 Ollama `/api/tags`
-- [ ] 9.10 `POST /api/rag/embed/ollama/pull`：代理 Ollama `/api/pull`，流式进度
-- [ ] 9.11 `GET /api/rag/profiles` / `POST` / `PATCH` / `DELETE`：embed_profiles CRUD（id 自动生成、display name 可改）
+- [x] 9.9 `GET /api/rag/embed/ollama/models`：代理 Ollama `/api/tags`
+- [x] 9.10 `POST /api/rag/embed/ollama/pull`：代理 Ollama `/api/pull`，流式进度
+- [x] 9.11 `GET /api/rag/profiles` / `POST` / `PATCH` / `DELETE`：embed_profiles CRUD（id 自动生成、display name 可改）
 - [x] 9.12 `POST /api/rag/watcher/toggle`：开关 watcher
 - [x] 9.13 `GET /api/rag/stream`：统一 SSE 进度通道
 - [x] 9.14 `POST /api/rag/purge`：清空索引（删 DB 文件 + 内存状态）
@@ -105,13 +105,13 @@
 - [x] 10.4 操作按钮组件：[手动重建] [手动增量] [取消]；watcher 切换 toggle；预算配置（日额度 + 超额行为）
 - [x] 10.5 进度条组件：根据 SSE 事件实时更新；显示当前 stage/file/速度
 - [x] 10.6 最近活动日志组件：环形 buffer，最新在上
-- [ ] 10.7 Embed Profile 管理组件：列表 + 新建对话框 + 编辑 + 删除 + 设为 active
-- [ ] 10.8 Provider 动态表单：按 provider 类型渲染不同字段（OpenAI / Ollama / Local / Compat）；ID 只读显示
-- [ ] 10.9 [测试连接] 按钮：调 `/api/rag/embed/test`，未通过禁用保存
+- [x] 10.7 Embed Profile 管理组件：列表 + 新建对话框 + 编辑 + 删除 + 设为 active
+- [x] 10.8 Provider 动态表单：按 provider 类型渲染不同字段（OpenAI / Ollama / Local / Compat）；ID 只读显示
+- [x] 10.9 [测试连接] 按钮：调 `/api/rag/embed/test`，未通过禁用保存
 - [ ] 10.10 Local provider 专属 UI：模型选择 + 设备 + 精度 + 缓存目录 + [下载模型] + 下载进度条 + 后端依赖检测提示
-- [ ] 10.11 Ollama 专属 UI：模型下拉自动发现 + 未装显示 [拉取]
-- [ ] 10.12 HF 镜像切换组件（mirror / 官方 / 自定义）+ [测试连通]
-- [ ] 10.13 维度变更确认对话框：切 provider 时 dim 不一致弹出
+- [x] 10.11 Ollama 专属 UI：模型下拉自动发现 + 未装显示 [拉取]
+- [x] 10.12 HF 镜像切换组件（mirror / 官方 / 自定义）+ [测试连通]
+- [x] 10.13 维度变更确认对话框：切 provider 时 dim 不一致弹出
 - [x] 10.14 .ragignore 编辑器：Monaco 简易模式 + 保存
 - [x] 10.15 Playground 区块：输入框 + [搜索] + 结果列表（可展开 content / 跳转源文件）
 
