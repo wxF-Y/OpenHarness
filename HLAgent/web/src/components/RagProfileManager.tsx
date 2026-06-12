@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   listProfiles, createProfile, deleteProfile, testEmbed, listOllamaModels,
+  installLocalDepsUrl,
 } from '../utils/ragApi'
 import type { EmbedProfile } from '../utils/ragApi'
 
@@ -54,6 +55,9 @@ export function RagProfileManager() {
   const [testResult, setTestResult] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [installLog, setInstallLog] = useState<string[]>([])
+  const [installing, setInstalling] = useState(false)
+  const [installDone, setInstallDone] = useState(false)
 
   const refresh = async () => {
     try { setProfiles(await listProfiles()) } catch (e) { setErr(String(e)) }
@@ -113,6 +117,55 @@ export function RagProfileManager() {
       void refresh()
     } catch (e) {
       setErr(String(e))
+    }
+  }
+
+  const handleInstallLocalDeps = async () => {
+    if (!window.confirm(
+      '将通过 pip 安装 sentence-transformers + torch (~1.5GB 下载)。\n' +
+      '安装完成后需要重启 gateway 才能生效。是否继续？',
+    )) return
+    setInstalling(true)
+    setInstallLog([])
+    setInstallDone(false)
+    try {
+      const resp = await fetch(installLocalDepsUrl(), { method: 'POST' })
+      if (!resp.ok || !resp.body) throw new Error(`install ${resp.status}`)
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const parts = buf.split('\n\n')
+        buf = parts.pop() ?? ''
+        for (const chunk of parts) {
+          const line = chunk.split('\n').find((l) => l.startsWith('data:'))
+          if (!line) continue
+          try {
+            const evt = JSON.parse(line.slice(5).trim()) as {
+              stage: string; line?: string; message?: string; cmd?: string; rc?: number
+            }
+            if (evt.stage === 'log' && evt.line) {
+              setInstallLog((prev) => [...prev, evt.line as string].slice(-200))
+            } else if (evt.stage === 'start' && evt.cmd) {
+              setInstallLog((prev) => [...prev, `$ ${evt.cmd}`])
+            } else if (evt.stage === 'done') {
+              setInstallLog((prev) => [...prev, '✓ ' + (evt.message ?? '完成')])
+              setInstallDone(true)
+            } else if (evt.stage === 'error') {
+              setInstallLog((prev) => [...prev, '✗ ' + (evt.message ?? 'error')])
+            }
+          } catch {
+            /* skip malformed */
+          }
+        }
+      }
+    } catch (e) {
+      setInstallLog((prev) => [...prev, '✗ ' + String(e)])
+    } finally {
+      setInstalling(false)
     }
   }
 
@@ -228,14 +281,31 @@ export function RagProfileManager() {
       {form.provider === 'local' && (
         <div style={{ ...styles.row, marginTop: 12, color: '#fab387' }}>
           <span style={{ gridColumn: 'span 2' }}>
-            ⚠ Local provider 需要安装 sentence-transformers + torch (~1.5GB):
-            <code style={{
-              display: 'block', padding: 8, marginTop: 4,
-              background: '#181825', borderRadius: 4,
-            }}>
-              pip install hlagent-gateway[embed-local]
-            </code>
-            首次使用时模型将自动从 HF 镜像下载 (~1.2GB)。
+            ⚠ Local provider 需要 sentence-transformers + torch (~1.5GB)。
+            点下方按钮一键安装；首次使用模型时会自动从 HF 镜像下载 (~130MB-1.2GB)。
+            <div style={{ marginTop: 8 }}>
+              <button
+                style={styles.button}
+                onClick={() => void handleInstallLocalDeps()}
+                disabled={installing}
+              >
+                {installing ? '安装中…' : installDone ? '已安装 ✓' : '一键安装 Local 依赖'}
+              </button>
+              {installDone && (
+                <span style={{ marginLeft: 8, color: '#fab387' }}>
+                  请重启 gateway: bash scripts/restart.sh all
+                </span>
+              )}
+            </div>
+            {installLog.length > 0 && (
+              <pre style={{
+                marginTop: 8, padding: 8, maxHeight: 240,
+                overflowY: 'auto', background: '#11111b',
+                color: '#cdd6f4', fontSize: 11, borderRadius: 4,
+              }}>
+                {installLog.join('\n')}
+              </pre>
+            )}
           </span>
         </div>
       )}

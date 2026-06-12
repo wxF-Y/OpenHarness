@@ -1,5 +1,4 @@
-const base = (typeof window !== 'undefined' && (window as { GATEWAY_URL?: string }).GATEWAY_URL)
-  ?? 'http://127.0.0.1:8000'
+const base = ''   // use relative paths; Vite proxies /api/* to the gateway
 
 export interface RagStats {
   files: number
@@ -152,4 +151,8 @@ export async function listOllamaModels(baseUrl = 'http://localhost:11434'): Prom
   const r = await fetch(`${base}/api/rag/embed/ollama/models?base_url=${encodeURIComponent(baseUrl)}`)
   if (!r.ok) return []
   return ((await r.json()) as { models: Array<{ name: string }> }).models
+}
+
+export function installLocalDepsUrl(): string {
+  return `${base}/api/rag/embed/install-local-deps`
 }

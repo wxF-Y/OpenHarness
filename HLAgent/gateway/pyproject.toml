@@ -25,6 +25,12 @@ dependencies = [
     "watchdog>=4.0",
 ]
 
+[project.optional-dependencies]
+embed-local = [
+    "sentence-transformers>=3.0",
+    "torch>=2.4",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

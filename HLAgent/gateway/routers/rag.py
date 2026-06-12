@@ -413,3 +413,47 @@ async def embed_download(req: dict) -> dict:
             f"huggingface-cli download {model} --local-dir <cache-dir>"
         ),
     }
+
+
+@router.post("/embed/install-local-deps")
+async def install_local_deps() -> StreamingResponse:
+    """Run `pip install hlagent-gateway[embed-local]` in a subprocess.
+
+    Streams pip stdout/stderr as SSE so the UI shows progress. The user must
+    restart the gateway afterwards for the new module to be importable in
+    the running process.
+    """
+    import shlex
+    import sys
+
+    gateway_dir = Path(__file__).resolve().parent.parent
+    cmd = [sys.executable, "-m", "pip", "install", "-e",
+           f"{gateway_dir}[embed-local]"]
+
+    async def gen():
+        yield f"data: {json.dumps({'stage': 'start', 'cmd': ' '.join(shlex.quote(c) for c in cmd)})}\n\n"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(gateway_dir),
+            )
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                try:
+                    line = raw.decode("utf-8", errors="replace").rstrip()
+                except Exception:
+                    line = repr(raw)
+                if not line:
+                    continue
+                yield f"data: {json.dumps({'stage': 'log', 'line': line})}\n\n"
+            rc = await proc.wait()
+            if rc == 0:
+                yield f"data: {json.dumps({'stage': 'done', 'rc': 0, 'message': '安装完成。请重启 gateway 以加载新依赖。'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'stage': 'error', 'rc': rc, 'message': f'pip 退出码 {rc}'})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'stage': 'error', 'message': f'{type(exc).__name__}: {exc}'})}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
